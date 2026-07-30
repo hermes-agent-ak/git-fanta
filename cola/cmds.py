@@ -652,9 +652,12 @@ class ResetMode(EditModel):
         self.new_file_type = main.Types.TEXT
         self.new_filename: str | None = ''
 
-    def do(self) -> tuple[int, str, str] | None:
+    def do(self, update_status: bool = False) -> tuple[int, str, str] | None:
         super().do()
-        self.model.update_file_status()
+        if update_status:
+            self.model.update_status()
+        else:
+            self.model.update_file_status()
         self.context.selection.reset(emit=True)
 
 
@@ -865,7 +868,7 @@ class Commit(ResetMode):
         self.author = author
         self.date = date
 
-    def do(self) -> tuple[int, str, str]:
+    def do(self, update_status: bool = True) -> tuple[int, str, str]:
         # Create the commit message file
         context = self.context
         msg = self.msg
@@ -912,7 +915,7 @@ class Commit(ResetMode):
         finally:
             core.unlink(tmp_file)
         if status == 0:
-            super().do()
+            super().do(update_status=update_status)
             if context.cfg.get(prefs.AUTOTEMPLATE):
                 template_loader = LoadCommitMessageFromTemplate(context)
                 template_loader.do()

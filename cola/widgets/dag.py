@@ -3,6 +3,7 @@ import collections
 import enum
 import itertools
 import math
+from dataclasses import dataclass
 from functools import partial
 
 from qtpy import QtCore
@@ -14,20 +15,18 @@ from qtpy.QtCore import Signal
 from .. import cmds
 from .. import core
 from .. import difftool
-from .. import gitcmds
 from .. import guicmds
 from .. import hotkeys
 from .. import icons
 from .. import qtcompat
 from .. import qtutils
-from .. import utils
 from ..compat import maxsize
 from ..i18n import N_
 from ..models import dag
+from ..models import graph
 from ..models import main
 from ..models import prefs
 from ..models.graph import GraphRowColor
-from ..models.graph import build_graph
 from ..qtutils import get
 from . import archive
 from . import browse
@@ -783,28 +782,207 @@ def _prepare_labels(refs: list[str]) -> list[tuple[str, str, str | None]]:
     return result
 
 
+@dataclass(frozen=True)
+class InlineGraphStyle:
+    """Palette-derived colors for the inline commit graph."""
+
+    normal_fill: QtGui.QColor
+    merge_fill: QtGui.QColor
+    head_fill: QtGui.QColor
+    head_accent: QtGui.QColor
+    outline: QtGui.QColor
+    text: QtGui.QColor
+    selected_text: QtGui.QColor
+    chip_text: QtGui.QColor
+    chip_text_candidates: tuple[QtGui.QColor, ...]
+    chip_other: QtGui.QColor
+    chip_remote: QtGui.QColor
+    chip_head: QtGui.QColor
+    lane_colors: tuple[QtGui.QColor, ...]
+
+
+def _opaque_color(color, fallback_value=0.5):
+    """Return a valid opaque copy, synthesizing only for an invalid color."""
+    if not color.isValid():
+        return QtGui.QColor.fromHsvF(0.0, 0.0, fallback_value, 1.0)
+    result = QtGui.QColor(color)
+    result.setAlphaF(1.0)
+    return result
+
+
+def _mix_color(first, second, second_weight):
+    """Return an opaque palette color blended towards another palette color."""
+    first = _opaque_color(first)
+    second = _opaque_color(second)
+    first_weight = 1.0 - second_weight
+    return QtGui.QColor.fromRgbF(
+        first.redF() * first_weight + second.redF() * second_weight,
+        first.greenF() * first_weight + second.greenF() * second_weight,
+        first.blueF() * first_weight + second.blueF() * second_weight,
+        1.0,
+    )
+
+
+def _color_luminance(color):
+    channels = []
+    for value in (color.redF(), color.greenF(), color.blueF()):
+        if value <= 0.04045:
+            channels.append(value / 12.92)
+        else:
+            channels.append(((value + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def _color_contrast(first, second):
+    lighter, darker = sorted(
+        (_color_luminance(first), _color_luminance(second)), reverse=True
+    )
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def _best_contrast(candidates, backgrounds):
+    candidates = tuple(_opaque_color(color) for color in candidates)
+    if not candidates:
+        candidates = (_opaque_color(QtGui.QColor()),)
+    backgrounds = tuple(_opaque_color(color) for color in backgrounds)
+    if not backgrounds:
+        return candidates[0]
+    return max(
+        candidates,
+        key=lambda color: min(_color_contrast(color, bg) for bg in backgrounds),
+    )
+
+
+def _lane_colors(palette):
+    base_colors = tuple(
+        _opaque_color(color)
+        for color in (
+            palette.base().color(),
+            palette.alternateBase().color(),
+            palette.highlight().color(),
+        )
+    )
+    palette_colors = base_colors + tuple(
+        _opaque_color(color)
+        for color in (palette.text().color(), palette.highlightedText().color())
+    )
+    hsv = [color.getHsvF() for color in palette_colors]
+    hues = [hue for hue, _saturation, _value, _alpha in hsv if hue >= 0.0]
+    hue = hues[0] if hues else 0.0
+    palette_saturation = max(saturation for _hue, saturation, _value, _alpha in hsv)
+    palette_value = max(value for _hue, _saturation, value, _alpha in hsv)
+    saturations = (
+        max(0.12, palette_saturation * 0.35),
+        max(0.38, palette_saturation * 0.65),
+        max(0.68, palette_saturation),
+    )
+    values = (0.16, 0.34, 0.56, max(0.78, palette_value), 1.0)
+
+    result = []
+    used = set()
+    for shift in (0.0, 0.21, 0.43, 0.67, 0.83):
+        shifted_hue = (hue + shift) % 1.0
+        candidates = [
+            QtGui.QColor.fromHsvF(shifted_hue, saturation, value, 1.0)
+            for saturation in saturations
+            for value in values
+        ]
+        seed = QtGui.QColor.fromHsvF(shifted_hue, saturations[-1], values[0], 1.0)
+        for foreground in palette_colors:
+            candidates.extend(
+                _mix_color(seed, foreground, weight) for weight in (0.35, 0.55, 0.72)
+            )
+        distinct_candidates = {
+            candidate.rgba(): candidate
+            for candidate in candidates
+            if candidate.rgba() not in used
+        }
+        lane = _best_contrast(distinct_candidates.values(), base_colors)
+        result.append(lane)
+        used.add(lane.rgba())
+
+    # QColor quantizes channels, so validate uniqueness after all HSV fallbacks.
+    if len({color.rgba() for color in result}) != len(result):
+        raise AssertionError('lane color fallback did not produce distinct colors')
+    return tuple(result)
+
+
+def _distinct_chip_backgrounds(colors, palette_colors):
+    """Return three semantic chip colors, expanding collapsed palette roles."""
+    colors = tuple(_opaque_color(color) for color in colors)
+    if len({color.rgba() for color in colors}) == len(colors):
+        return colors
+    hsv = [color.getHsvF() for color in palette_colors]
+    hues = [hue for hue, _saturation, _value, _alpha in hsv if hue >= 0.0]
+    hue = hues[0] if hues else 0.0
+    saturation = max(0.58, max(value[1] for value in hsv))
+    average_luminance = sum(_color_luminance(color) for color in palette_colors) / len(
+        palette_colors
+    )
+    value = 0.34 if average_luminance > 0.45 else 0.76
+    return tuple(
+        QtGui.QColor.fromHsvF((hue + shift) % 1.0, saturation, value, 1.0)
+        for shift in (0.0, 0.34, 0.67)
+    )
+
+
+def inline_graph_style(palette):
+    """Build inline graph colors from the current widget palette without caching."""
+    base = _opaque_color(palette.base().color())
+    alternate = _opaque_color(palette.alternateBase().color())
+    text = _opaque_color(palette.text().color())
+    highlight = _opaque_color(palette.highlight().color())
+    highlighted_text = _opaque_color(palette.highlightedText().color())
+    chip_other, chip_remote, chip_head = _distinct_chip_backgrounds(
+        (
+            _mix_color(base, alternate, 0.72),
+            _mix_color(alternate, highlight, 0.38),
+            _mix_color(highlight, base, 0.24),
+        ),
+        (base, alternate, highlight, text, highlighted_text),
+    )
+    neutral_low = QtGui.QColor.fromHsvF(0.0, 0.0, 0.0, 1.0)
+    neutral_high = QtGui.QColor.fromHsvF(0.0, 0.0, 1.0, 1.0)
+    chip_text_candidates = (text, highlighted_text, neutral_low, neutral_high)
+    raw_highlight = palette.highlight().color()
+    raw_highlighted_text = palette.highlightedText().color()
+    if (
+        raw_highlight.isValid()
+        and raw_highlight.alpha() == 255
+        and raw_highlighted_text.isValid()
+        and raw_highlighted_text.alpha() == 255
+        and _color_contrast(highlighted_text, highlight) >= 4.5
+    ):
+        selected_text = highlighted_text
+    else:
+        selected_text = _best_contrast(
+            chip_text_candidates, (highlight, base, alternate)
+        )
+    chip_text = _best_contrast(
+        chip_text_candidates, (chip_other, chip_remote, chip_head)
+    )
+    return InlineGraphStyle(
+        normal_fill=_mix_color(base, text, 0.18),
+        merge_fill=_mix_color(alternate, highlight, 0.44),
+        head_fill=_mix_color(highlight, base, 0.16),
+        head_accent=_mix_color(highlight, highlighted_text, 0.52),
+        outline=_mix_color(text, base, 0.18),
+        text=text,
+        selected_text=selected_text,
+        chip_text=chip_text,
+        chip_text_candidates=chip_text_candidates,
+        chip_other=chip_other,
+        chip_remote=chip_remote,
+        chip_head=chip_head,
+        lane_colors=_lane_colors(palette),
+    )
+
+
 class GraphDelegate(QtWidgets.QStyledItemDelegate):
-    LANE_WIDTH = 16
+    LANE_WIDTH = 18
     DOT_RADIUS = 5
     EDGE_WIDTH = 3
-    commit_color = QtGui.QColor(Qt.white)
-    merge_color = QtGui.QColor(Qt.lightGray)
-    head_color = QtGui.QColor(Qt.green)
-    current_head_color = QtGui.QColor(255, 215, 0)  # Gold color. Plain yellow is too close to white
-    outline_pen = QtGui.QPen()
-    outline_pen.setWidth(2)
-    outline_pen.setColor(QtGui.QColor(Qt.white).darker())
-
-    other_color = QtGui.QColor(Qt.white)
-    remote_color = QtGui.QColor(Qt.yellow)
-
-    text_pen = QtGui.QPen()
-    text_pen.setColor(QtGui.QColor(Qt.black))
-    text_pen.setWidth(1)
-
-    head_pen = QtGui.QPen()
-    head_pen.setColor(QtGui.QColor(Qt.black))
-    head_pen.setWidth(1)
+    ROW_HEIGHT = 26
 
     LABEL_BORDER = 3
     LABEL_SPACING = 4
@@ -848,6 +1026,7 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
             self._animation.start()
 
     def paint(self, painter, option, index):
+        style = inline_graph_style(option.palette)
         row = index.data(GRAPH_ROW_ROLE)
         prev_row = index.data(GRAPH_PREV_ROW_ROLE)
 
@@ -862,7 +1041,8 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         bottom_y = rect.bottom() + 1
         lane_w = self.LANE_WIDTH
 
-        if option.state & QtWidgets.QStyle.State_Selected:
+        selected = bool(option.state & QtWidgets.QStyle.State_Selected)
+        if selected:
             painter.fillRect(rect, option.palette.highlight())
 
         # Draw the graph if we have graph data.
@@ -874,7 +1054,7 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
             # Top half: edges from the previous row arrive vertically.
             if prev_row is not None:
                 for edge in prev_row.edges_to_parent:
-                    color = EdgeColor.colors[edge.color_index % len(EdgeColor.colors)]
+                    color = style.lane_colors[edge.color_index % len(style.lane_colors)]
                     pen.setColor(color)
                     painter.setPen(pen)
                     to_x = rect.left() + edge.to_column * lane_w + lane_w // 2
@@ -883,7 +1063,7 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
             # Bottom half: straight or spline depending on diagonal.
             if row is not None:
                 for edge in row.edges_to_parent:
-                    color = EdgeColor.colors[edge.color_index % len(EdgeColor.colors)]
+                    color = style.lane_colors[edge.color_index % len(style.lane_colors)]
                     pen.setColor(color)
                     painter.setPen(pen)
                     from_x = rect.left() + edge.from_column * lane_w + lane_w // 2
@@ -906,11 +1086,23 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
             if row is not None:
                 cx = rect.left() + row.commit_column * lane_w + lane_w // 2
                 color_map = {
-                    GraphRowColor.NORMAL: self.commit_color,
-                    GraphRowColor.MERGE: self.merge_color,
-                    GraphRowColor.HEAD: self.current_head_color,
+                    GraphRowColor.NORMAL: style.normal_fill,
+                    GraphRowColor.MERGE: style.merge_fill,
+                    GraphRowColor.HEAD: style.head_fill,
                 }
-                painter.setPen(self.outline_pen)
+                if row.color == GraphRowColor.HEAD:
+                    accent_pen = QtGui.QPen(style.head_accent)
+                    accent_pen.setWidth(2)
+                    painter.setPen(accent_pen)
+                    painter.setBrush(Qt.NoBrush)
+                    painter.drawEllipse(
+                        QtCore.QPointF(cx, mid_y),
+                        self.DOT_RADIUS + 2,
+                        self.DOT_RADIUS + 2,
+                    )
+                outline_pen = QtGui.QPen(style.outline)
+                outline_pen.setWidth(2)
+                painter.setPen(outline_pen)
                 painter.setBrush(color_map[row.color])
                 painter.drawEllipse(
                     QtCore.QPointF(cx, mid_y), self.DOT_RADIUS, self.DOT_RADIUS
@@ -926,14 +1118,21 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
             tree = self.parent()
             item = tree.itemFromIndex(index) if tree else None
             labels_width = self._draw_labels(
-                painter, mid_y, commit.tags, label_x, option.fontMetrics, item
+                painter,
+                mid_y,
+                commit.tags,
+                label_x,
+                option.fontMetrics,
+                item,
+                style,
+                style.selected_text if selected else None,
             )
 
         text = index.data(Qt.DisplayRole)
         if text:
             text_x = int(label_x + labels_width + 8)
             text_rect = rect.adjusted(text_x - rect.left(), 0, 0, 0)
-            painter.setPen(option.palette.text().color())
+            painter.setPen(style.selected_text if selected else style.text)
             painter.drawText(
                 text_rect,
                 Qt.AlignLeft | Qt.AlignVCenter,
@@ -955,6 +1154,8 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         start_x: int,
         font_metrics: QtGui.QFontMetrics,
         item: object | None,
+        style: InlineGraphStyle | None = None,
+        selected_text: QtGui.QColor | None = None,
     ):
         """Draw branch/tag labels and return total width used."""
         current_x = start_x
@@ -962,28 +1163,23 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         y_offset = 0
 
         for i, (tag, display_text, condensed_text) in enumerate(_prepare_labels(tags)):
-            pen = self.text_pen
-            brush = self.other_color
-
-            if tag == 'HEAD':
-                brush = self.remote_color
-            elif tag.startswith(_REMOTES_PREFIX):
-                pass
-            elif tag.startswith(_TAGS_PREFIX):
-                brush = self.remote_color
-            elif tag.startswith(_HEADS_PREFIX):
-                pen = self.head_pen
-                brush = self.head_color
-
             if painter is not None:
-                painter.setPen(pen)
+                brush = style.chip_other
+                if tag == 'HEAD' or tag.startswith(_TAGS_PREFIX):
+                    brush = style.chip_remote
+                elif tag.startswith(_HEADS_PREFIX):
+                    brush = style.chip_head
+                candidates = style.chip_text_candidates
+                if selected_text is not None:
+                    candidates = (_opaque_color(selected_text),) + candidates
+                chip_text = _best_contrast(candidates, (brush,))
+                painter.setPen(QtGui.QPen(chip_text))
                 painter.setBrush(brush)
 
             shown, text_width = self._label_shown_text(
                 condensed_text, display_text, font_metrics, item, i
             )
-            # Use 80% of font height for tighter vertical fit
-            text_height = font_metrics.height() * 0.8
+            text_height = font_metrics.height()
 
             text_rect = QtCore.QRectF(
                 current_x, y - text_height / 2, text_width, text_height
@@ -1062,9 +1258,8 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
             text_width = 0
 
         total_width = graph_width + 8 + labels_width + 8 + text_width
-        if total_width < self.LANE_WIDTH * 4:
-            total_width = self.LANE_WIDTH * 4
-        height = option.fontMetrics.height()
+        total_width = max(total_width, self.LANE_WIDTH * 4)
+        height = max(self.ROW_HEIGHT, option.fontMetrics.height() + 4)
         return QtCore.QSize(total_width, height)
 
     def _label_hit_test(
@@ -1209,11 +1404,16 @@ class CommitTreeWidget(standard.TreeWidget, ViewerMixin):
         if self._column_init_state < ColumnInitState.SHOW_EVENT:
             self._column_init_state = ColumnInitState.SHOW_EVENT
             width = self.header().width()
-            one_half = width // 2
-            one_quarter = width // 4
+            summary_width = int(width * 0.70)
+            author_width = int(width * 0.15)
             # Set initial SUMMARY column width; it will be adjusted when graph loads.
-            self.setColumnWidth(CommitTreeWidgetItem.SUMMARY, one_half)
-            self.setColumnWidth(CommitTreeWidgetItem.AUTHOR, one_quarter)
+            self.setColumnWidth(CommitTreeWidgetItem.SUMMARY, summary_width)
+            self.setColumnWidth(CommitTreeWidgetItem.AUTHOR, author_width)
+
+    def changeEvent(self, event):
+        if event.type() == QtCore.QEvent.PaletteChange:
+            self.viewport().update()
+        super().changeEvent(event)
 
     def display_inline_graph(self, enabled):
         """Enable and disable the display of inline graph in the commit list"""
@@ -1291,30 +1491,18 @@ class CommitTreeWidget(standard.TreeWidget, ViewerMixin):
         self.oidmap.clear()
         self.commits = []
 
-    def add_commits(self, commits):
-        """Add commits to the tree"""
+    def add_commits(self, commits, graph_result):
+        """Add commits and their precomputed graph rows to the tree."""
         self.commits.extend(commits)
         items = []
-        head = 'HEAD'
-        head_oid = None
         for commit in reversed(commits):
             item = CommitTreeWidgetItem(commit)
             items.append(item)
             self.oidmap[commit.oid] = item
             for tag in commit.tags:
                 self.oidmap[tag] = item
-                if tag == head:
-                    head_oid = commit.oid
 
         self.insertTopLevelItems(0, items)
-
-        graph_result = build_graph(
-            [
-                (commit.oid, [parent.oid for parent in commit.parents])
-                for commit in commits
-            ],
-            head_oid=head_oid,
-        )
         self.apply_graph_result(graph_result)
 
     def apply_graph_result(self, graph_result) -> None:
@@ -1388,20 +1576,33 @@ class CommitTreeWidget(standard.TreeWidget, ViewerMixin):
         QtWidgets.QTreeWidget.leaveEvent(self, event)
 
 
-class GitDAG(standard.MainWindow):
-    """The git-dag widget."""
+@dataclass(frozen=True)
+class _HistoryCacheMetadata:
+    oids: tuple[str, ...]
+    refs: frozenset[str]
+    count: int
+    display_status: bool
+    generation: int = 0
+
+
+class CommitHistoryWidget(QtWidgets.QWidget):
+    """Reusable commit history controls, tree, and loading state."""
 
     commits_selected = Signal(object)
+    commits_loaded = Signal(object)
+    controls_changed = Signal(object)
 
-    def __init__(self, context, params, parent=None):
+    def __init__(
+        self,
+        context,
+        ref='--all',
+        count=1000,
+        display_status=False,
+        parent=None,
+        display_inline_graph=False,
+    ):
         super().__init__(parent)
-
-        self.setMinimumSize(420, 420)
-
-        # change when widgets are added/removed
-        self.widget_version = 2
         self.context = context
-        self.params = params
         self.model = context.model
 
         self.commits = {}
@@ -1412,50 +1613,448 @@ class GitDAG(standard.MainWindow):
         self.old_oids = None
         self.old_count = 0
         self.old_display_status = None
+        self.last_successful_cache_key = None
         self.force_refresh = False
+        self.repository_generation = 0
+        self.successful_repository_generation = -1
+
+        self.active_thread = None
+        self.active_request = None
+        self.active_run_id = None
+        self.active_result = None
+        self.active_cache_metadata = None
+        self.pending_request = None
+        self.pending_cache_metadata = None
+        self._next_run_id = 1
+        self.stopping = False
+        self.loading = False
+        self.error_status = None
         self._widgets_initialized = False
 
-        self.thread = None
         self.revtext = GitDagLineEdit(context)
+        self.revtext.setText(ref)
         self.maxresults = standard.SpinBox(digits=None, maxi=9999999, wrap=True)
-
-        self.zoom_out = qtutils.create_action_button(
-            tooltip=N_('Zoom Out'), icon=icons.zoom_out()
-        )
-
-        self.zoom_in = qtutils.create_action_button(
-            tooltip=N_('Zoom In'), icon=icons.zoom_in()
-        )
-
-        self.zoom_to_fit = qtutils.create_action_button(
-            tooltip=N_('Zoom to Fit'), icon=icons.zoom_fit_best()
-        )
-
+        self.maxresults.setValue(count)
+        self.history_error_status = QtWidgets.QLabel()
+        self.history_error_status.setObjectName('HistoryErrorStatus')
+        self.history_error_status.setStyleSheet('QLabel { color: #c01c28; }')
+        self.history_error_status.hide()
         self.treewidget = CommitTreeWidget(context, self)
+
+        self.display_inline_graph_action = qtutils.add_action_bool(
+            self,
+            N_('Display Inline Graph'),
+            self.treewidget.display_inline_graph,
+            display_inline_graph,
+        )
+        self.treewidget.display_inline_graph(display_inline_graph)
+        self.display_status_action = qtutils.add_action_bool(
+            self,
+            N_('Display Worktree Status'),
+            self._display_worktree_status,
+            display_status,
+        )
+
+        controls_layout = qtutils.hbox(
+            defs.no_margin,
+            defs.spacing,
+            self.revtext,
+            self.history_error_status,
+            self.maxresults,
+        )
+        controls_layout.setAlignment(self.maxresults, Qt.AlignTop)
+        controls_widget = QtWidgets.QWidget(self)
+        controls_widget.setLayout(controls_layout)
+        layout = qtutils.vbox(
+            defs.no_margin, defs.spacing, controls_widget, self.treewidget
+        )
+        self.setLayout(layout)
+
+        self.treewidget.commits_selected.connect(self.select_commits)
+        self.maxresults.editingFinished.connect(self.display, type=Qt.QueuedConnection)
+        self.revtext.activated.connect(self.display, type=Qt.QueuedConnection)
+        self.revtext.enter.connect(self.display, type=Qt.QueuedConnection)
+        self.revtext.down.connect(self.focus_tree, type=Qt.QueuedConnection)
+        self.model.updated.connect(self.model_updated, type=Qt.QueuedConnection)
+
+    def current_request(self):
+        """Return an immutable snapshot of the current history controls."""
+        return dag.HistoryRequest(
+            self._next_run_id,
+            get(self.revtext),
+            get(self.maxresults),
+            get(self.display_status_action),
+        )
+
+    def set_values(self, ref, count, display_status):
+        """Set all history controls from an external parameter snapshot."""
+        self.revtext.setText(ref)
+        self.maxresults.setValue(count)
+        with qtutils.BlockSignals(self.display_status_action):
+            self.display_status_action.setChecked(display_status)
+
+    def request_history(
+        self, ref=None, count=None, display_status=None, cache_metadata=None
+    ):
+        """Request a serialized history load from an immutable UI snapshot."""
+        if self.stopping:
+            return False
+        if ref is None and count is None and display_status is None:
+            snapshot = self.current_request()
+            ref = snapshot.ref
+            count = snapshot.count
+            display_status = snapshot.display_status
+        else:
+            if ref is None:
+                ref = get(self.revtext)
+            if count is None:
+                count = get(self.maxresults)
+            if display_status is None:
+                display_status = get(self.display_status_action)
+        key = (ref, count, display_status)
+        if self.active_request and key == self.active_request.cache_key:
+            same_snapshot = (
+                cache_metadata is None or cache_metadata == self.active_cache_metadata
+            )
+            if same_snapshot:
+                self.pending_request = None
+                self.pending_cache_metadata = None
+                result = self.active_result
+                if result is not None:
+                    self.thread_result(result)
+                return False
+        if self.pending_request and key == self.pending_request.cache_key:
+            if cache_metadata is not None:
+                self.pending_cache_metadata = cache_metadata
+            return False
+
+        request = dag.HistoryRequest(self._next_run_id, ref, count, display_status)
+        self._next_run_id += 1
+        if self.active_thread is not None:
+            self.pending_request = request
+            self.pending_cache_metadata = cache_metadata
+        else:
+            self._start_request(request, cache_metadata)
+        return True
+
+    def _start_request(self, request, cache_metadata=None):
+        if self.stopping:
+            return
+        thread = ReaderThread(self.context, request)
+        self.active_thread = thread
+        self.active_request = request
+        self.active_run_id = request.run_id
+        self.active_result = None
+        self.active_cache_metadata = cache_metadata
+        self.loading = True
+        thread.result.connect(self.thread_result, type=Qt.QueuedConnection)
+        thread.finished.connect(
+            partial(self._thread_finished, thread), type=Qt.QueuedConnection
+        )
+        thread.start()
+
+    def _finalize_thread(self, thread):
+        """Finalize the active thread exactly once."""
+        if thread is not self.active_thread:
+            return False
+        self.active_thread = None
+        self.active_request = None
+        self.active_run_id = None
+        self.active_result = None
+        self.active_cache_metadata = None
+        thread.deleteLater()
+        return True
+
+    def _thread_finished(self, thread):
+        if not self._finalize_thread(thread):
+            return
+        if self.stopping:
+            self.loading = False
+            return
+        pending = self.pending_request
+        pending_metadata = self.pending_cache_metadata
+        self.pending_request = None
+        self.pending_cache_metadata = None
+        if pending is not None:
+            self._start_request(pending, pending_metadata)
+        else:
+            self.loading = False
+
+    def _set_error_status(self, status):
+        self.error_status = status
+        text = status or ''
+        self.history_error_status.setText(text)
+        self.history_error_status.setToolTip(text)
+        self.history_error_status.setVisible(bool(status))
+        self.revtext.setToolTip(text)
+        self.revtext.hint.set_error(bool(status))
+
+    def thread_result(self, result):
+        if self.stopping or result.run_id != self.active_run_id:
+            return
+        if self.pending_request is not None:
+            self.active_result = result
+            return
+        self.active_result = None
+        self.loading = False
+        if not result.successful:
+            self._set_error_status(
+                f"returncode {result.returncode}: {result.error or ''}"
+            )
+            return
+        if result.graph is None and result.commits:
+            self._set_error_status('successful history result is missing graph data')
+            return
+        graph_result = result.graph or graph.GraphResult(rows=[], max_columns=0)
+        self._set_error_status(None)
+        self.apply_result(result.commits, graph_result)
+        request = self.active_request
+        if request is None:
+            return
+        self.last_successful_cache_key = request.cache_key
+        metadata = self.active_cache_metadata
+        if metadata is not None:
+            self.old_oids = list(metadata.oids)
+            self.old_refs = set(metadata.refs)
+            self.old_count = metadata.count
+            self.old_display_status = metadata.display_status
+            self.successful_repository_generation = metadata.generation
+
+    def apply_result(self, commits, graph_result):
+        """Atomically apply a complete successful history result."""
+        previous_oids = [commit.oid for commit in self.selection or self.old_selection]
+        commit_list = list(commits)
+        commit_map = {}
+        for commit_obj in commit_list:
+            commit_map[commit_obj.oid] = commit_obj
+            for tag in commit_obj.tags:
+                commit_map[tag] = commit_obj
+        selection = [commit_map[oid] for oid in previous_oids if oid in commit_map]
+        if not selection and commit_list:
+            selection = [commit_list[-1]]
+        selection = sort_by_generation(selection)
+
+        with qtutils.BlockSignals(self.treewidget):
+            self.clear()
+            self.commit_list = commit_list
+            self.commits.update(commit_map)
+            self.treewidget.add_commits(commit_list, graph_result)
+
+        self.selection = list(selection)
+        self.old_selection = list(selection)
+        self.treewidget.select_commits(selection)
+        self.commits_loaded.emit(list(commit_list))
+        self.commits_selected.emit(list(selection))
+
+    def stop_and_wait(self):
+        """Stop scheduling work and wait fully for the active worker."""
+        if self.stopping:
+            return
+        self.stopping = True
+        self.pending_request = None
+        self.pending_cache_metadata = None
+        thread = self.active_thread
+        if thread is not None:
+            if thread.isRunning():
+                thread.requestInterruption()
+                thread.wait()
+            self._finalize_thread(thread)
+        self.loading = False
+
+    def _display_worktree_status(self, _enabled):
+        """Reload after toggling WORKTREE and STAGE pseudo-commits."""
+        self.display()
+
+    def focus_input(self):
+        self.revtext.setFocus()
+
+    def focus_tree(self):
+        self.treewidget.setFocus()
+
+    def model_updated(self):
+        self.load_if_stale()
+
+    def refresh(self):
+        """Unconditionally refresh the history."""
+        self.force_refresh = True
+        cmds.do(cmds.Refresh, self.context)
+
+    def load_if_stale(self):
+        """Mark repository data stale and use the serialized display pipeline."""
+        self.repository_generation += 1
+        self.display()
+
+    def display(self):
+        """Update history from GUI/model snapshots without resolving Git refs."""
+        ref = get(self.revtext)
+        count = get(self.maxresults)
+        display_status = get(self.display_status_action)
+        refs = frozenset(
+            self.model.local_branches + self.model.remote_branches + self.model.tags
+        )
+        key = (ref, count, display_status)
+        update = (
+            self.force_refresh
+            or key != self.last_successful_cache_key
+            or refs != frozenset(self.old_refs)
+            or self.repository_generation != self.successful_repository_generation
+        )
+        self.controls_changed.emit(key)
+        if update:
+            metadata = _HistoryCacheMetadata(
+                (), refs, count, display_status, self.repository_generation
+            )
+            self.request_history(ref, count, display_status, metadata)
+        self.force_refresh = False
+
+    def select_commits(self, commits):
+        """Apply and publicly relay a complete selection snapshot."""
+        self.selection = list(commits)
+        self.treewidget.select_commits(commits)
+        self.commits_selected.emit(list(commits))
+
+    def clear(self):
+        """Clear the tree and all applied history state."""
+        self.commits.clear()
+        self.commit_list = []
+        self.selection = []
+        self.old_selection = []
+        self.treewidget.clear()
+
+    def export_state(self):
+        """Export history-child state independently of any main window."""
+        log_state = self.treewidget.export_state()
+        log_state['column_widths'] = log_state['column_widths'][:2]
+        return {
+            'ref': get(self.revtext),
+            'count': get(self.maxresults),
+            'display_inline_graph': self.display_inline_graph_action.isChecked(),
+            'display_status': self.display_status_action.isChecked(),
+            'log': log_state,
+        }
+
+    @staticmethod
+    def is_valid_state(state):
+        """Return whether state can be applied without coercion."""
+        if not isinstance(state, dict):
+            return False
+        ref = state.get('ref', '')
+        count = state.get('count')
+        display_status = state.get('display_status', False)
+        display_inline_graph = state.get('display_inline_graph', False)
+        if not (
+            isinstance(ref, str)
+            and isinstance(count, int)
+            and not isinstance(count, bool)
+            and 1 <= count <= 9_999_999
+            and isinstance(display_status, bool)
+            and isinstance(display_inline_graph, bool)
+        ):
+            return False
+        log_state = state.get('log')
+        if log_state is None:
+            return True
+        if not isinstance(log_state, dict):
+            return False
+        column_widths = log_state.get('column_widths')
+        return isinstance(column_widths, (list, tuple)) and all(
+            isinstance(width, int) and not isinstance(width, bool)
+            for width in column_widths
+        )
+
+    def apply_state(self, state):
+        """Validate and atomically apply history-child state."""
+        if not self.is_valid_state(state):
+            return False
+
+        ref = state.get('ref', get(self.revtext))
+        count = state['count']
+        display_status = state.get(
+            'display_status', self.display_status_action.isChecked()
+        )
+        display_inline_graph = state.get('display_inline_graph', True)
+        log_state = state.get('log')
+
+        self.set_values(ref, count, display_status)
+        self.treewidget.display_inline_graph(display_inline_graph)
+        with qtutils.BlockSignals(self.display_inline_graph_action):
+            self.display_inline_graph_action.setChecked(display_inline_graph)
+        if log_state is not None:
+            self.treewidget.apply_state(log_state)
+        return True
+
+    def close_popup(self):
+        self.revtext.close_popup()
+
+    def insert_ref_expression(self, expression):
+        self.revtext.insert(expression)
+        self.display()
+
+    def set_ref(self, ref):
+        self.revtext.setText(ref)
+        self.display()
+
+    def event(self, event):
+        if event.type() == QtCore.QEvent.DeferredDelete:
+            self.close_popup()
+            self.stop_and_wait()
+        return super().event(event)
+
+    def closeEvent(self, event):
+        self.close_popup()
+        self.stop_and_wait()
+        super().closeEvent(event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._widgets_initialized:
+            self._widgets_initialized = True
+            self.maxresults.setMinimumHeight(self.revtext.height())
+
+
+class GitDAG(standard.MainWindow):
+    """Standalone DAG window composed from a reusable history widget."""
+
+    commits_selected = Signal(object)
+
+    def __init__(self, context, params, parent=None):
+        super().__init__(parent)
+        self.setMinimumSize(420, 420)
+        self.widget_version = 2
+        self.context = context
+        self.params = params
+        self.model = context.model
+
+        self.historywidget = CommitHistoryWidget(
+            context,
+            ref=params.ref,
+            count=params.count,
+            display_status=params.display_status,
+            parent=self,
+        )
         self.diffwidget = diff.CommitDiffWidget(context, self, is_commit=True)
         self.filewidget = filelist.FileWidget(context, self)
         self.graphview = GraphView(context, self)
 
-        self.treewidget.commits_selected.connect(
-            self.commits_selected, type=Qt.QueuedConnection
+        self.zoom_out = qtutils.create_action_button(
+            tooltip=N_('Zoom Out'), icon=icons.zoom_out()
         )
-        self.graphview.commits_selected.connect(
-            self.commits_selected, type=Qt.QueuedConnection
+        self.zoom_in = qtutils.create_action_button(
+            tooltip=N_('Zoom In'), icon=icons.zoom_in()
+        )
+        self.zoom_to_fit = qtutils.create_action_button(
+            tooltip=N_('Zoom to Fit'), icon=icons.zoom_fit_best()
         )
 
-        self.commits_selected.connect(self.select_commits, type=Qt.QueuedConnection)
-        self.commits_selected.connect(
-            self.diffwidget.commits_selected, type=Qt.QueuedConnection
-        )
-        self.commits_selected.connect(
-            self.filewidget.commits_selected, type=Qt.QueuedConnection
-        )
-        self.commits_selected.connect(
-            self.graphview.select_commits, type=Qt.QueuedConnection
-        )
-        self.commits_selected.connect(
-            self.treewidget.select_commits, type=Qt.QueuedConnection
-        )
+        history = self.historywidget
+        tree = history.treewidget
+        history.commits_loaded.connect(self._history_loaded)
+        history.commits_selected.connect(self._history_selection_changed)
+        history.controls_changed.connect(self._history_controls_changed)
+        self.graphview.commits_selected.connect(history.select_commits)
+        self.commits_selected.connect(self.diffwidget.commits_selected)
+        self.commits_selected.connect(self.filewidget.commits_selected)
+        self.commits_selected.connect(self.graphview.select_commits)
         self.filewidget.files_selected.connect(
             self.diffwidget.files_selected, type=Qt.QueuedConnection
         )
@@ -1466,38 +2065,24 @@ class GitDAG(standard.MainWindow):
             self.histories_selected, type=Qt.QueuedConnection
         )
 
-        self.proxy = FocusRedirectProxy(
-            self.treewidget, self.graphview, self.filewidget
-        )
-
-        self.treewidget.menu_actions = viewer_actions(self.treewidget, self.proxy)
+        self.proxy = FocusRedirectProxy(tree, self.graphview, self.filewidget)
+        tree.menu_actions = viewer_actions(tree, self.proxy)
         self.graphview.menu_actions = viewer_actions(self.graphview, self.proxy)
         self.diffwidget_copy_commit = set_icon(
             icons.copy(),
             qtutils.add_action(
                 self.diffwidget.diff,
                 N_('Copy Commit'),
-                self.treewidget.copy_to_clipboard,
+                tree.copy_to_clipboard,
                 hotkeys.COPY_COMMIT_ID,
             ),
         )
         self.diffwidget.diff.menu_actions.append(self.diffwidget_copy_commit)
 
-        self.controls_layout = qtutils.hbox(
-            defs.no_margin, defs.spacing, self.revtext, self.maxresults
-        )
-        self.controls_layout.setAlignment(self.maxresults, Qt.AlignTop)
-
-        self.controls_widget = QtWidgets.QWidget()
-        self.controls_widget.setLayout(self.controls_layout)
-
         self.log_dock = qtutils.create_dock(
             'Log', N_('Log'), self, stretch=False, hide_title=True
         )
-        self.log_dock.setWidget(self.treewidget)
-        log_dock_titlebar = self.log_dock.titleBarWidget()
-        log_dock_titlebar.add_corner_widget(self.controls_widget)
-
+        self.log_dock.setWidget(history)
         self.file_dock = qtutils.create_dock(
             'Files', N_('Files'), self, hide_title=True
         )
@@ -1508,14 +2093,11 @@ class GitDAG(standard.MainWindow):
         self.diffwidget.set_options(self.diff_options)
         self.diff_options.hide_advanced_options()
         self.diff_options.set_diff_type(main.Types.TEXT)
-
         self.diff_dock = qtutils.create_dock('Diff', N_('Diff'), self, hide_title=True)
         self.diff_dock.setWidget(self.diff_panel)
+        self.diff_dock.titleBarWidget().add_title_widget(self.diff_options)
 
-        diff_titlebar = self.diff_dock.titleBarWidget()
-        diff_titlebar.add_title_widget(self.diff_options)
-
-        self.graph_controls_layout = qtutils.hbox(
+        graph_controls_layout = qtutils.hbox(
             defs.no_margin,
             defs.button_spacing,
             self.zoom_out,
@@ -1523,43 +2105,26 @@ class GitDAG(standard.MainWindow):
             self.zoom_to_fit,
             defs.spacing,
         )
-
-        self.graph_controls_widget = QtWidgets.QWidget()
-        self.graph_controls_widget.setLayout(self.graph_controls_layout)
-
+        graph_controls_widget = QtWidgets.QWidget()
+        graph_controls_widget.setLayout(graph_controls_layout)
         self.graphview_dock = qtutils.create_dock(
             'Graph', N_('Graph'), self, hide_title=True
         )
         self.graphview_dock.setWidget(self.graphview)
-        graph_titlebar = self.graphview_dock.titleBarWidget()
-        graph_titlebar.add_corner_widget(self.graph_controls_widget)
+        self.graphview_dock.titleBarWidget().add_corner_widget(graph_controls_widget)
 
-        self.display_inline_graph_action = qtutils.add_action_bool(
-            self,
-            N_('Display Inline Graph'),
-            self.treewidget.display_inline_graph,
-            False,
-        )
-        self.display_status_action = qtutils.add_action_bool(
-            self, N_('Display Worktree Status'), self._display_worktree_status, False
-        )
         self.lock_layout_action = qtutils.add_action_bool(
             self, N_('Lock Layout'), self.set_lock_layout, False
         )
-
         self.refresh_action = qtutils.add_action(
-            self, N_('Refresh'), self.refresh, hotkeys.REFRESH
+            self, N_('Refresh'), history.refresh, hotkeys.REFRESH
         )
-
-        # Create the application menu
         self.menubar = QtWidgets.QMenuBar(self)
         self.setMenuBar(self.menubar)
-
-        # View Menu
         self.view_menu = qtutils.add_menu(N_('View'), self.menubar)
         self.view_menu.addAction(self.refresh_action)
-        self.view_menu.addAction(self.display_inline_graph_action)
-        self.view_menu.addAction(self.display_status_action)
+        self.view_menu.addAction(history.display_inline_graph_action)
+        self.view_menu.addAction(history.display_status_action)
         self.view_menu.addSeparator()
         self.view_menu.addAction(self.log_dock.toggleViewAction())
         self.view_menu.addAction(self.graphview_dock.toggleViewAction())
@@ -1574,21 +2139,14 @@ class GitDAG(standard.MainWindow):
         self.addDockWidget(left, self.diff_dock)
         self.addDockWidget(right, self.graphview_dock)
         self.addDockWidget(right, self.file_dock)
-
-        # Also re-loads dag.* from the saved state
         self.init_state(context.settings, self.resize_to_desktop)
 
         qtutils.connect_button(self.zoom_out, self.graphview.zoom_out)
         qtutils.connect_button(self.zoom_in, self.graphview.zoom_in)
         qtutils.connect_button(self.zoom_to_fit, self.graphview.zoom_to_fit)
-
-        self.treewidget.zoom_to_fit.connect(
-            self.graphview.zoom_to_fit, type=Qt.QueuedConnection
-        )
-        self.treewidget.diff_commits.connect(
-            self.diff_commits, type=Qt.QueuedConnection
-        )
-        self.treewidget.search_line_range_in_oid.connect(
+        tree.zoom_to_fit.connect(self.graphview.zoom_to_fit, type=Qt.QueuedConnection)
+        tree.diff_commits.connect(self.diff_commits, type=Qt.QueuedConnection)
+        tree.search_line_range_in_oid.connect(
             self.search_line_range_in_oid, type=Qt.QueuedConnection
         )
         self.graphview.diff_commits.connect(self.diff_commits, type=Qt.QueuedConnection)
@@ -1602,87 +2160,58 @@ class GitDAG(standard.MainWindow):
         self.filewidget.select_line_range_for_file.connect(
             self.search_line_range_for_file, type=Qt.QueuedConnection
         )
-        self.maxresults.editingFinished.connect(self.display, type=Qt.QueuedConnection)
-        self.revtext.textChanged.connect(self.text_changed, type=Qt.QueuedConnection)
-        self.revtext.activated.connect(self.display, type=Qt.QueuedConnection)
-        self.revtext.enter.connect(self.display, type=Qt.QueuedConnection)
-        self.revtext.down.connect(self.focus_tree, type=Qt.QueuedConnection)
-        # The model is updated in another thread so use
-        # signals/slots to bring control back to the main GUI thread
-        self.model.updated.connect(self.model_updated, type=Qt.QueuedConnection)
 
-        qtutils.add_action(self, 'FocusInput', self.focus_input, hotkeys.FOCUS_INPUT)
-        qtutils.add_action(self, 'FocusTree', self.focus_tree, hotkeys.FOCUS_TREE)
+        qtutils.add_action(self, 'FocusInput', history.focus_input, hotkeys.FOCUS_INPUT)
+        qtutils.add_action(self, 'FocusTree', history.focus_tree, hotkeys.FOCUS_TREE)
         qtutils.add_action(self, 'FocusDiff', self.focus_diff, hotkeys.FOCUS_DIFF)
         qtutils.add_close_action(self)
-
         self.set_params(params)
 
     def set_params(self, params):
-        context = self.context
         self.params = params
-        # Update fields affected by model
-        self.revtext.setText(params.ref)
-        self.maxresults.setValue(params.count)
+        self.historywidget.set_values(params.ref, params.count, params.display_status)
         self.update_window_title()
 
-        self._stop_reader_thread()
-        self.thread = ReaderThread(context, params)
-        self.thread.begin.connect(self.thread_begin, type=Qt.QueuedConnection)
-        self.thread.status.connect(self.thread_status, type=Qt.QueuedConnection)
-        self.thread.add.connect(self.add_commits, type=Qt.QueuedConnection)
-        self.thread.end.connect(self.thread_end, type=Qt.QueuedConnection)
+    def _history_controls_changed(self, values):
+        ref, count, display_status = values
+        self.params.set_ref(ref)
+        self.params.set_count(count)
+        self.params.set_display_status(display_status)
+        self.update_window_title()
 
-    def _stop_reader_thread(self):
-        """Stop the reader thread if it is currently running"""
-        if self.thread is not None and self.thread.isRunning():
-            self.thread.requestInterruption()
-            QtCore.QThread.currentThread().yieldCurrentThread()
-            self.thread.wait(100)
+    def _history_loaded(self, commits):
+        """Apply one complete commit list to the window-only graph view."""
+        with qtutils.BlockSignals(self.graphview.scene()):
+            self.graphview.clear()
+            self.graphview.add_commits(commits)
+        if commits:
+            self.graphview.set_initial_view()
 
-    def _display_worktree_status(self, enabled):
-        """Enable and disable the display of the WORKTREE and STAGE pseudo-commits"""
-        self.params.display_status = enabled
-        self.display()
-
-    def focus_input(self):
-        """Focus the revision input field"""
-        self.revtext.setFocus()
-
-    def focus_tree(self):
-        """Focus the revision tree list widget"""
-        self.treewidget.setFocus()
+    def _history_selection_changed(self, commits):
+        self.diffwidget_copy_commit.setEnabled(bool(commits))
+        if not commits:
+            self.diffwidget.oid = None
+            self.diffwidget.oid_start = None
+            self.diffwidget.oid_end = None
+        self.commits_selected.emit(list(commits))
 
     def focus_diff(self):
-        """Focus the diff widget"""
         self.diffwidget.setFocus()
 
-    def text_changed(self, txt):
-        """Respond to changes to the revision input text"""
-        self.params.ref = txt
-        self.update_window_title()
-
     def update_window_title(self):
-        """Update the window title to reflect the displayed ref"""
         project = self.model.project
-        if self.params.ref:
+        ref = get(self.historywidget.revtext)
+        if ref:
             self.setWindowTitle(
-                N_('%(project)s: %(ref)s - DAG')
-                % {
-                    'project': project,
-                    'ref': self.params.ref,
-                }
+                N_('%(project)s: %(ref)s - DAG') % {'project': project, 'ref': ref}
             )
         else:
             self.setWindowTitle(project + N_(' - DAG'))
 
     def export_state(self):
-        """Store persistent GUI state"""
+        """Store persistent window state plus canonical nested history state."""
         state = standard.MainWindow.export_state(self)
-        state['count'] = self.params.count
-        state['display_inline_graph'] = self.display_inline_graph_action.isChecked()
-        state['display_status'] = self.params.display_status
-        state['log'] = self.treewidget.export_state()
+        state['history'] = self.historywidget.export_state()
         state['word_wrap'] = self.diffwidget.options.enable_word_wrapping.isChecked()
         state['intraline_diff_preset'] = self.diffwidget.options.intraline_diff_preset()
         state[
@@ -1691,173 +2220,154 @@ class GitDAG(standard.MainWindow):
         return state
 
     def apply_state(self, state):
-        """Apply persistent GUI state"""
-        result = standard.MainWindow.apply_state(self, state)
-        try:
-            count = state['count']
-            if self.params.overridden('count'):
-                count = self.params.count
-        except (KeyError, TypeError, ValueError, AttributeError):
-            count = self.params.count
-            result = False
-        self.params.set_count(count)
+        """Atomically apply window state and migrated history state."""
+        if not isinstance(state, dict):
+            return False
+        if 'history' in state:
+            nested_history = state['history']
+            if not isinstance(nested_history, dict):
+                return False
+            history_state = dict(nested_history)
+        else:
+            history_keys = (
+                'ref',
+                'count',
+                'display_inline_graph',
+                'display_status',
+                'log',
+            )
+            history_state = {key: state[key] for key in history_keys if key in state}
 
-        display_status = state.get('display_status', True)
-        self.params.set_display_status(display_status)
-        with qtutils.BlockSignals(self.display_status_action):
-            self.display_status_action.setChecked(display_status)
+        if not self.historywidget.is_valid_state(history_state):
+            return False
+        if self.params.overridden('count'):
+            history_state['count'] = self.params.count
+        if self.params.overridden('ref'):
+            history_state['ref'] = self.params.ref
+        history_state.setdefault('display_status', True)
+        if not self.historywidget.is_valid_state(history_state):
+            return False
 
-        display_inline_graph = state.get('display_inline_graph', True)
-        self.treewidget.display_inline_graph(display_inline_graph)
-        with qtutils.BlockSignals(self.display_inline_graph_action):
-            self.display_inline_graph_action.setChecked(display_inline_graph)
-
-        self.lock_layout_action.setChecked(state.get('lock_layout', False))
-        self.diffwidget.set_word_wrapping(state.get('word_wrap', False), update=True)
-
-        try:
-            log_state = state['log']
-        except (KeyError, ValueError):
-            log_state = None
-        if log_state:
-            self.treewidget.apply_state(log_state)
-
-        intraline_diff_preset = state.get(
-            'intraline_diff_preset', diff_intraline.INTRALINE_DIFF_PRESET_DEFAULT_ID
+        string_fields = ('geometry', 'windowstate', 'intraline_diff_preset')
+        bool_fields = (
+            'lock_layout',
+            'word_wrap',
+            'intraline_diff_timing',
         )
-        self.diffwidget.set_intraline_diff_preset(intraline_diff_preset, update=True)
+        numeric_fields = ('width', 'height', 'x', 'y')
+        if any(
+            key in state and not isinstance(state[key], str) for key in string_fields
+        ):
+            return False
+        if any(
+            key in state and not isinstance(state[key], bool) for key in bool_fields
+        ):
+            return False
+        if any(
+            key in state
+            and state[key] is not None
+            and not isinstance(state[key], (int, str))
+            for key in numeric_fields
+        ):
+            return False
 
-        intraline_diff_timing = bool(state.get('intraline_diff_timing', False))
-        self.set_intraline_diff_timing(intraline_diff_timing, update=True)
+        window_keys = (
+            'geometry',
+            'width',
+            'height',
+            'x',
+            'y',
+            'windowstate',
+            'lock_layout',
+        )
+        apply_window = any(key in state for key in window_keys)
+        previous_window_state = standard.MainWindow.export_state(self)
+        previous_lock_action = self.lock_layout_action.isChecked()
+        previous_history_state = self.historywidget.export_state()
+        previous_params = (
+            self.params.ref,
+            self.params.count,
+            self.params.display_status,
+        )
+        previous_word_wrap = self.diffwidget.options.enable_word_wrapping.isChecked()
+        previous_intraline_preset = self.diffwidget.options.intraline_diff_preset()
+        previous_intraline_timing = (
+            self.diffwidget.options.intraline_diff_timing.isChecked()
+        )
 
-        return result
+        def rollback():
+            if apply_window:
+                standard.MainWindow.apply_state(self, previous_window_state)
+            self.historywidget.apply_state(previous_history_state)
+            self.params.set_ref(previous_params[0])
+            self.params.set_count(previous_params[1])
+            self.params.set_display_status(previous_params[2])
+            self.diffwidget.set_word_wrapping(previous_word_wrap, update=True)
+            self.diffwidget.set_intraline_diff_preset(
+                previous_intraline_preset, update=True
+            )
+            self.set_intraline_diff_timing(previous_intraline_timing, update=True)
+            self.lock_layout_action.setChecked(previous_lock_action)
+
+        try:
+            if apply_window and not standard.MainWindow.apply_state(self, state):
+                rollback()
+                return False
+
+            word_wrap = state.get('word_wrap', False)
+            intraline_diff_preset = state.get(
+                'intraline_diff_preset',
+                diff_intraline.INTRALINE_DIFF_PRESET_DEFAULT_ID,
+            )
+            intraline_diff_timing = state.get('intraline_diff_timing', False)
+            self.diffwidget.set_word_wrapping(word_wrap, update=True)
+            self.diffwidget.set_intraline_diff_preset(
+                intraline_diff_preset, update=True
+            )
+            self.set_intraline_diff_timing(intraline_diff_timing, update=True)
+
+            if not self.historywidget.apply_state(history_state):
+                rollback()
+                return False
+            ref = get(self.historywidget.revtext)
+            self.params.set_ref(ref)
+            self.params.set_count(get(self.historywidget.maxresults))
+            self.params.set_display_status(
+                get(self.historywidget.display_status_action)
+            )
+            self.lock_layout_action.setChecked(self.lock_layout)
+        except Exception:
+            rollback()
+            return False
+        return True
 
     def set_intraline_diff_preset(self, preset_id, update=False):
-        """Forward the selected text diff preset to the editor."""
-        # only the text editor
         self.diffwidget.set_intraline_diff_preset(preset_id, update=update)
 
     def set_intraline_diff_timing(self, enabled, update=False):
-        """Forward the intra-line diff timing option to the editor."""
         self.diffwidget.set_intraline_diff_timing(enabled, update=update)
 
     def model_updated(self):
-        """Refresh the view when the model is updated"""
-        self.display()
+        self.historywidget.model_updated()
         self.update_window_title()
 
     def refresh(self):
-        """Unconditionally refresh the DAG"""
-        # self.force_refresh triggers an Unconditional redraw
-        self.force_refresh = True
-        cmds.do(cmds.Refresh, self.context)
+        return self.historywidget.refresh()
 
     def display(self):
-        """Update the view when the Git refs change"""
-        ref = get(self.revtext)
-        count = get(self.maxresults)
-        context = self.context
-        model = self.model
-        display_status = get(self.display_status_action)
-        # The DAG tries to avoid updating when the object IDs have not
-        # changed.  Without doing this the DAG constantly redraws itself
-        # whenever inotify sends update events, which hurts usability.
-        #
-        # To minimize redraws we leverage `git rev-parse`.  The strategy is to
-        # use `git rev-parse` on the input line, which converts each argument
-        # into object IDs.  From there it's a simple matter of detecting when
-        # the object IDs changed.
-        #
-        # In addition to object IDs, we also need to know when the set of
-        # named references (branches, tags) changes so that an update is
-        # triggered when new branches and tags are created.
-        refs = set(model.local_branches + model.remote_branches + model.tags)
-        argv = utils.shell_split(ref or 'HEAD')
-        oids = gitcmds.parse_refs(context, argv)
-        update = (
-            self.force_refresh
-            or count != self.old_count
-            or oids != self.old_oids
-            or refs != self.old_refs
-            or display_status != self.old_display_status
-        )
-        if update:
-            self._stop_reader_thread()
-            self.params.set_ref(ref)
-            self.params.set_count(count)
-            self.params.set_display_status(display_status)
-            self.thread.start()
+        return self.historywidget.display()
 
-        self.old_oids = oids
-        self.old_count = count
-        self.old_refs = refs
-        self.old_display_status = self.params.display_status
-        self.force_refresh = False
+    def request_history(self, *args, **kwargs):
+        return self.historywidget.request_history(*args, **kwargs)
 
     def select_commits(self, commits):
-        """Commits were selected"""
-        self.selection = commits
-        enabled = bool(commits)
-        self.diffwidget_copy_commit.setEnabled(enabled)
+        self.historywidget.select_commits(commits)
 
     def clear(self):
-        """Clear the view and the list of known commits"""
-        self.commits.clear()
-        self.commit_list = []
-        self.graphview.clear()
-        self.treewidget.clear()
-
-    def add_commits(self, commits):
-        """Add new commits from the reader thread"""
-        self.commit_list.extend(commits)
-        # Keep track of commits
-        for commit_obj in commits:
-            self.commits[commit_obj.oid] = commit_obj
-            for tag in commit_obj.tags:
-                self.commits[tag] = commit_obj
-        # The treewidget is quick to update.  The graphview is slower when updating
-        # incrementally so it is updated just once at thread_end() once all commits have
-        # been gathered.
-        self.treewidget.add_commits(commits)
-
-    def thread_begin(self):
-        """The reader thread has begun"""
-        if self.selection:
-            self.old_selection = self.selection
-        self.clear()
-
-    def thread_end(self):
-        """The reader thread has completed"""
-        self.graphview.add_commits(self.commit_list)
-        self.restore_selection()
-
-    def thread_status(self, successful):
-        """Indicate an error when the revision input contains an invalid ref"""
-        self.revtext.hint.set_error(not successful)
-
-    def restore_selection(self):
-        """Restore the selection before the display was refreshed"""
-        # The selection can become empty when the widgets are cleared.
-        selection = self.selection or self.old_selection
-        try:
-            commit_obj = self.commit_list[-1]
-        except IndexError:
-            # No commits, exist, early-out
-            return
-
-        raw_commits = [self.commits.get(commit.oid, None) for commit in selection]
-        new_commits = [commit for commit in raw_commits if commit is not None]
-        if new_commits:
-            # The old selection exists in the new state
-            self.commits_selected.emit(sort_by_generation(new_commits))
-        else:
-            # The old selection is now empty.  Select the top-most commit
-            self.commits_selected.emit([commit_obj])
-
-        self.graphview.set_initial_view()
+        self.historywidget.clear()
+        self._history_loaded([])
 
     def diff_commits(self, left, right):
-        """React to diff_commits signals by displaying a difftool interface"""
         paths = self.params.paths()
         if paths:
             difftool.difftool_launch(self.context, left=left, right=right, paths=paths)
@@ -1865,12 +2375,8 @@ class GitDAG(standard.MainWindow):
             difftool.diff_commits(self.context, self, left, right, detect_renames=True)
 
     def search_line_range_in_oid(self, oid):
-        """Open a dialog for generating "git log -L" line range expressions"""
         all_paths = self.filewidget.selected_paths()
-        if all_paths:
-            paths = all_paths[0]
-        else:
-            paths = None
+        paths = all_paths[0] if all_paths else None
         widget = finder.new_finder(
             self.context,
             paths=paths,
@@ -1887,21 +2393,15 @@ class GitDAG(standard.MainWindow):
         filename = widget.filename
         if not filename:
             return
-        range_expression = f'-L{start},+{span}:{filename}'
-        self.revtext.insert(range_expression)
-        self.display()
+        self.historywidget.insert_ref_expression(f'-L{start},+{span}:{filename}')
 
     def histories_selected(self, histories):
-        """Respond to file-based history selection from the files widget"""
         argv = [self.model.currentbranch, '--']
         argv.extend(histories)
-        rev_text = core.list2cmdline(argv)
-        self.revtext.setText(rev_text)
-        self.display()
+        self.historywidget.set_ref(core.list2cmdline(argv))
 
     def difftool_selected(self, files):
-        """Launch difftool across a commit range"""
-        bottom, top = self.treewidget.selected_commit_range()
+        bottom, top = self.historywidget.treewidget.selected_commit_range()
         if not top:
             return
         difftool.difftool_launch(
@@ -1909,77 +2409,101 @@ class GitDAG(standard.MainWindow):
         )
 
     def grab_file(self, filename):
-        """Save the selected file from the file list widget"""
-        oid = self.treewidget.selected_oid()
+        oid = self.historywidget.treewidget.selected_oid()
         model = browse.BrowseModel(oid, filename=filename)
         browse.save_path(self.context, filename, model)
 
     def grab_file_from_parent(self, filename):
-        """Save the selected file from parent commit in the file list widget"""
-        oid = self.treewidget.selected_oid() + '^'
+        oid = self.historywidget.treewidget.selected_oid() + '^'
         model = browse.BrowseModel(oid, filename=filename)
         browse.save_path(self.context, filename, model)
 
     def search_line_range_for_file(self, filename):
-        """Generate a line range expression for the specified filename"""
-        oid = self.treewidget.selected_oid()
+        oid = self.historywidget.treewidget.selected_oid()
         if not oid or not filename:
             return
         self.search_line_range_in_oid(oid)
 
-    # Qt overrides
     def closeEvent(self, event):
-        """Ensure the revision text popup is closed"""
-        self.revtext.close_popup()
-        self._stop_reader_thread()
+        self.historywidget.close_popup()
+        self.historywidget.stop_and_wait()
         standard.MainWindow.closeEvent(self, event)
-
-    def showEvent(self, event):
-        """Resize widgets once their sizes are known"""
-        standard.MainWindow.showEvent(self, event)
-        if not self._widgets_initialized:
-            self._widgets_initialized = True
-            self.maxresults.setMinimumHeight(self.revtext.height())
 
 
 class ReaderThread(QtCore.QThread):
-    begin = Signal()
-    add = Signal(object)
-    end = Signal()
-    status = Signal(object)
+    result = Signal(object)
 
-    def __init__(self, context, params):
+    def __init__(self, context, request):
         super().__init__()
         self.context = context
-        self.params = params
+        self.request = request
 
     def run(self):
-        """Gather commits and emit them to the main thread"""
-        context = self.context
-        repo = dag.RepoReader(context, self.params)
-        repo.reset()
-        self.begin.emit()
-
+        """Gather a complete immutable history result in the worker thread."""
+        request = self.request
         commits = []
-        for commit in repo.get():
+        graph_result = None
+        repo = None
+        successful = False
+        returncode = -1
+        error = ''
+        try:
+            params = dag.DAG(request.ref, request.count)
+            params.set_display_status(request.display_status)
+            repo = dag.RepoReader(self.context, params)
+            interrupted = False
+            for commit in repo.get():
+                if self.isInterruptionRequested():
+                    interrupted = True
+                    break
+                commits.append(commit)
             if self.isInterruptionRequested():
-                repo.reset()
-                return
-            commits.append(commit)
-            if len(commits) >= 2048:
-                self.add.emit(commits)
-                commits = []
+                interrupted = True
 
-        stage, worktree = repo.get_worktree_commits()
-        if stage:
-            commits.append(stage)
-        if worktree:
-            commits.append(worktree)
-        if commits:
-            self.add.emit(commits)
-
-        self.status.emit(repo.returncode == 0)
-        self.end.emit()
+            if not interrupted and repo.returncode == 0:
+                stage, worktree = repo.get_worktree_commits()
+                if self.isInterruptionRequested():
+                    interrupted = True
+                else:
+                    if stage:
+                        commits.append(stage)
+                    if worktree:
+                        commits.append(worktree)
+            if not interrupted and repo.returncode == 0:
+                head_oid = next(
+                    (commit.oid for commit in commits if 'HEAD' in commit.tags), None
+                )
+                graph_result = graph.build_graph(
+                    [
+                        (commit.oid, [parent.oid for parent in commit.parents])
+                        for commit in commits
+                    ],
+                    head_oid=head_oid,
+                )
+                if self.isInterruptionRequested():
+                    interrupted = True
+                    graph_result = None
+            successful = repo.returncode == 0 and not interrupted
+            returncode = repo.returncode if not interrupted else -1
+            error = repo.error
+        except Exception as exc:  # noqa: BLE001 - worker exception barrier
+            commits = []
+            successful = False
+            returncode = -1
+            error = repo.error if repo is not None and repo.error else str(exc)
+        if not successful:
+            commits = []
+            graph_result = None
+        self.result.emit(
+            dag.HistoryResult(
+                request.run_id,
+                successful,
+                returncode,
+                error,
+                tuple(commits),
+                graph_result,
+            )
+        )
 
 
 class Cache:

@@ -54,6 +54,14 @@ from . import status
 from . import submodules
 from . import toolbar
 
+HISTORY_INLINE_GRAPH_DEFAULT_VERSION = 1
+_HISTORY_INLINE_GRAPH_DEFAULT_VERSION_KEY = 'history_inline_graph_default_version'
+_MAIN_HISTORY_UNSUPPORTED_ACTIONS = (
+    'diff_this_selected',
+    'diff_selected_this',
+    'search_line_range',
+)
+
 
 class MainView(standard.MainWindow):
     config_actions_changed = Signal(object)
@@ -98,6 +106,29 @@ class MainView(standard.MainWindow):
             func=lambda dock: status.StatusWidget(context, dock.titleBarWidget(), dock),
         )
         self.statuswidget = self.statusdock.widget()
+
+        # "History" widget
+        self.historydock = create_dock(
+            'History',
+            N_('History'),
+            self,
+            func=lambda dock: dag.CommitHistoryWidget(
+                context,
+                ref='--all',
+                count=1000,
+                display_status=False,
+                display_inline_graph=True,
+                parent=dock,
+            ),
+        )
+        self.historywidget = self.historydock.widget()
+        history_tree = self.historywidget.treewidget
+        history_tree.menu_actions = dag.viewer_actions(history_tree, history_tree)
+        for action_name in _MAIN_HISTORY_UNSUPPORTED_ACTIONS:
+            menu_action = history_tree.menu_actions[action_name]
+            menu_action.setVisible(False)
+            menu_action.setShortcut(QtGui.QKeySequence())
+        self.model.updated.disconnect(self.historywidget.model_updated)
 
         # "Switch Repository" widgets
         self.bookmarksdock = create_dock(
@@ -878,6 +909,7 @@ class MainView(standard.MainWindow):
         top = Qt.TopDockWidgetArea
 
         self.addDockWidget(top, self.statusdock)
+        self.addDockWidget(top, self.historydock)
         self.addDockWidget(top, self.commitdock)
         if self.browser_dockable:
             self.addDockWidget(top, self.browserdock)
@@ -899,7 +931,7 @@ class MainView(standard.MainWindow):
         self.tabifyDockWidget(self.actionsdock, self.logdock)
 
         # Listen for model notifications
-        self.model.updated.connect(self.refresh, type=Qt.QueuedConnection)
+        self.model.updated.connect(self.model_updated, type=Qt.QueuedConnection)
         self.model.mode_changed.connect(
             lambda mode: self.refresh(), type=Qt.QueuedConnection
         )
@@ -923,6 +955,8 @@ class MainView(standard.MainWindow):
             ),
             type=Qt.QueuedConnection,
         )
+        self._initial_history_started = False
+        self._initial_history_loaded = False
         self.init_state(context.settings, self.set_initial_size)
 
         # Set the UI font size.
@@ -940,6 +974,17 @@ class MainView(standard.MainWindow):
         # The Interaction error handlers are not available until the main view has been
         # fully constructed, so we defer that initializaiton.
         QtCore.QTimer.singleShot(0, self.initialize)
+
+    def _load_initial_history(self):
+        if self.historywidget.stopping or self._initial_history_started:
+            return
+        self._initial_history_started = True
+        self.historywidget.load_if_stale()
+        QtCore.QTimer.singleShot(0, self._finish_initial_history_load)
+
+    def _finish_initial_history_load(self):
+        if not self.historywidget.stopping:
+            self._initial_history_loaded = True
 
     def initialize(self):
         context = self.context
@@ -962,6 +1007,8 @@ class MainView(standard.MainWindow):
                 details = git.win32_git_error_hint()
             Interaction.critical(title, message=msg, details=details)
             self.context.app.exit(core.EXIT_UNAVAILABLE)
+            return
+        QtCore.QTimer.singleShot(0, self._load_initial_history)
 
     def set_initial_size(self):
         # Default size; this is thrown out when save/restore is used
@@ -980,6 +1027,8 @@ class MainView(standard.MainWindow):
         self.model.save_commitmsg(msg=commit_msg)
         for browser in list(self.context.browser_windows):
             browser.close()
+        self.historywidget.close_popup()
+        self.historywidget.stop_and_wait()
         standard.MainWindow.closeEvent(self, event)
         if self.dag is not None and self.dag.isVisible():
             self.context.reset_view(self.dag)
@@ -990,17 +1039,24 @@ class MainView(standard.MainWindow):
         return menu
 
     def build_view_menu(self, menu):
+        for menu_action in menu.actions():
+            if menu_action.parent() is not menu:
+                menu.removeAction(menu_action)
         menu.clear()
         if utils.is_darwin():
             menu.addAction(self.minimize_action)
         menu.addAction(self.browse_action)
         menu.addAction(self.dag_action)
+        menu.addAction(self.historywidget.display_inline_graph_action)
         menu.addSeparator()
 
         popup_menu = self.createPopupMenu()
         for menu_action in popup_menu.actions():
-            menu_action.setParent(menu)
+            popup_menu.removeAction(menu_action)
+            if menu_action.parent() is popup_menu:
+                menu_action.setParent(menu)
             menu.addAction(menu_action)
+        popup_menu.deleteLater()
 
         context = self.context
         menu_action = menu.addAction(
@@ -1011,6 +1067,7 @@ class MainView(standard.MainWindow):
 
         dockwidgets = [
             self.logdock,
+            self.historydock,
             self.commitdock,
             self.statusdock,
             self.diffdock,
@@ -1026,7 +1083,8 @@ class MainView(standard.MainWindow):
         for dockwidget in dockwidgets:
             # Associate the action with the shortcut
             toggleview = dockwidget.toggleViewAction()
-            menu.addAction(toggleview)
+            if toggleview not in menu.actions():
+                menu.addAction(toggleview)
 
         menu.addSeparator()
         menu.addAction(self.lock_layout_action)
@@ -1116,6 +1174,12 @@ class MainView(standard.MainWindow):
     def get_config_actions(self):
         actions = cfgactions.get_config_actions(self.context)
         self.config_actions_changed.emit(actions)
+
+    def model_updated(self):
+        """Refresh repository-owned views after a complete model update."""
+        if self._initial_history_loaded:
+            self.historywidget.load_if_stale()
+        self.refresh()
 
     def refresh(self):
         """Update the title with the current branch and directory name."""
@@ -1240,6 +1304,11 @@ class MainView(standard.MainWindow):
         state = standard.MainWindow.export_state(self)
         show_status_filter = self.statuswidget.filter_widget.isVisible()
         state['show_status_filter'] = show_status_filter
+        state['show_history'] = not self.historydock.isHidden()
+        state['history'] = self.historywidget.export_state()
+        state[
+            _HISTORY_INLINE_GRAPH_DEFAULT_VERSION_KEY
+        ] = HISTORY_INLINE_GRAPH_DEFAULT_VERSION
         state['toolbars'] = self.toolbar_state.export_state()
         state['ref_sort'] = self.model.ref_sort
         self.diffviewer.export_state(state)
@@ -1249,6 +1318,35 @@ class MainView(standard.MainWindow):
 
     def apply_state(self, state):
         """Apply persistent UI state on startup"""
+        if not isinstance(state, dict):
+            self.historydock.show()
+            self.historydock.raise_()
+            return False
+        marker = state.get(_HISTORY_INLINE_GRAPH_DEFAULT_VERSION_KEY, 0)
+        if type(marker) is not int or marker < 0:
+            self.historydock.show()
+            self.historydock.raise_()
+            return False
+
+        if marker < HISTORY_INLINE_GRAPH_DEFAULT_VERSION and 'history' in state:
+            state = dict(state)
+            history_state = state['history']
+            if isinstance(history_state, dict):
+                history_state = dict(history_state)
+                history_state['display_inline_graph'] = True
+                state['history'] = history_state
+
+        if 'history' in state and not self.historywidget.is_valid_state(
+            state['history']
+        ):
+            self.historydock.show()
+            self.historydock.raise_()
+            return False
+        if 'show_history' in state and not isinstance(state['show_history'], bool):
+            self.historydock.show()
+            self.historydock.raise_()
+            return False
+
         toolbars = state.get('toolbars', [])
         self.toolbar_state.apply_state(toolbars)
 
@@ -1264,7 +1362,24 @@ class MainView(standard.MainWindow):
 
         diff_ok = self.diffviewer.apply_state(state)
         commitmsg_ok = self.commiteditor.apply_state(state)
-        return base_ok and diff_ok and commitmsg_ok
+
+        history_ok = True
+        if 'history' in state:
+            history_state = state['history']
+            history_ok = isinstance(history_state, dict) and (
+                self.historywidget.apply_state(history_state)
+            )
+        show_history = state.get('show_history', True)
+        visibility_ok = isinstance(show_history, bool)
+        if base_ok and history_ok and visibility_ok:
+            self.historydock.setVisible(show_history)
+            if show_history:
+                self.historydock.raise_()
+        else:
+            self.historydock.show()
+            self.historydock.raise_()
+
+        return base_ok and diff_ok and commitmsg_ok and history_ok and visibility_ok
 
     def setup_dockwidget_view_menu(self):
         # Hotkeys for toggling the dock widgets
@@ -1274,6 +1389,7 @@ class MainView(standard.MainWindow):
             optkey = 'Ctrl'
         dockwidgets = (
             (optkey + '+0', self.logdock),
+            (optkey + '+9', self.historydock),
             (optkey + '+1', self.commitdock),
             (optkey + '+2', self.statusdock),
             (optkey + '+3', self.diffdock),
