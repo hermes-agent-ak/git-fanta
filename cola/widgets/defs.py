@@ -51,3 +51,11 @@ dialog_w = scale(720)
 dialog_h = scale(445)
 
 msgbox_h = scale(128)
+
+# Target size for a plain confirmation dialog with no details pane and no
+# logo -- a short question, two buttons. Smaller than dialog_w because most
+# confirms fit in well under half the legacy width. dialog_w stays the
+# ceiling so anything larger (info text, details pane) keeps growing up to
+# the old width when needed.
+confirm_w = scale(360)
+confirm_h = scale(140)

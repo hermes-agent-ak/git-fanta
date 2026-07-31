@@ -116,6 +116,17 @@ def test_message_box_is_not_wider_than_the_fixed_legacy_width(qapp, app_context)
     box.deleteLater()
 
 
+def test_plain_confirm_box_uses_a_tighter_target_size(qapp, app_context):
+    """A short question with no logo and no details pane stays small."""
+    box = MessageBox(parent=None, title='t', text='short', ok_text='OK')
+
+    box.set_initial_size()
+
+    assert box.width() == defs.confirm_w
+    assert box.height() == defs.confirm_h
+    box.deleteLater()
+
+
 def test_message_box_is_wide_enough_for_its_text(qapp, app_context):
     """Shrinking must not cut the content off.
 

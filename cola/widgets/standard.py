@@ -1116,14 +1116,27 @@ class MessageBox(Dialog):
 
         The old fixed 720x128 was the same for a one-line question and for a
         box with a details pane, which made every confirmation far larger than
-        what it asks. sizeHint() already accounts for the details pane when it
-        is visible, so the two cases separate on their own.
+        what it asks. A plain confirmation -- no logo, no visible details
+        pane, no long info text -- gets a tighter target size; anything with
+        a logo, an expanded details pane or a text that needs the room keeps
+        using sizeHint() so it grows up to the legacy dialog_w when needed.
         """
         desktop_width, desktop_height = qtutils.desktop_size()
-        hint = self.sizeHint()
-        minimum = self.minimumSizeHint()
-        width = max(hint.width(), minimum.width(), defs.dialog_w // 2)
-        height = max(hint.height(), minimum.height())
+        is_plain_confirm = (
+            self.logo_label is None or not self.logo_label.isVisible()
+        ) and not self.details_text.isVisible()
+        if is_plain_confirm:
+            # Plain confirm: start with the tight target, grow up to sizeHint()
+            # if the text wraps onto more lines than the target fits.
+            hint = self.sizeHint()
+            minimum = self.minimumSizeHint()
+            width = defs.confirm_w
+            height = max(defs.confirm_h, hint.height(), minimum.height())
+        else:
+            hint = self.sizeHint()
+            minimum = self.minimumSizeHint()
+            width = max(hint.width(), minimum.width(), defs.dialog_w // 2)
+            height = max(hint.height(), minimum.height())
         self.resize(
             min(width, desktop_width, defs.dialog_w),
             min(height, desktop_height),
