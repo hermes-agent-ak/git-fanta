@@ -2,53 +2,57 @@
 status: open
 ---
 
-# Mehrfachauswahl in der History: alle betroffenen Dateien
+# Multi-commit selection in the history: every file the selection touches
 
-**Erstellt:** 2026-07-31
-**Branch:** Die Tasks committen auf den Branch, der beim Start ausgecheckt ist. **Niemals auf
-`main`** — das Muster für Feature-Arbeit ist `tree-ui/<agent>/<modell>/<thema>`. Vor Task 1
-prüfen: `git rev-parse --abbrev-ref HEAD`. Steht dort `main`, vorher einen Branch anlegen.
-Dieser Plan legt selbst **keinen** an.
-**Betrifft:** `FileWidget` in `cola/widgets/filelist.py` und damit **drei** Hosts: das Datei-Panel
-der History im Hauptfenster, den `Files`-Dock des eigenständigen DAG-Fensters und den
-Rebase-Sequenzeditor (`cola/sequenceeditor.py:227`).
+**Created:** 2026-07-31
+**Branch:** Commit the tasks onto whatever branch is checked out at the start. **Never onto
+`main`** — the pattern for feature work is `tree-ui/<agent>/<model>/<topic>`. Check before Task 1:
+`git rev-parse --abbrev-ref HEAD`. If it says `main`, create a branch first. This plan does **not**
+create one.
+**Affects:** `FileWidget` in `cola/widgets/filelist.py`, and through it **three** hosts: the
+history file panel in the main window, the `Files` dock of the standalone DAG window, and the
+rebase sequence editor (`cola/sequenceeditor.py:227`).
 
 ---
 
-## 0. Wie dieser Plan zu lesen ist
+## 0. How to read this plan
 
-Der Plan ist so geschrieben, dass er **ohne Vorwissen und ohne eigene Entscheidungen**
-ausgeführt werden kann.
+This plan is written so that it can be executed **without prior knowledge and without making any
+decisions of your own**.
 
-- **Tasks strikt in der Reihenfolge 0 → 3.** Nichts überspringen.
-- **Ein Task = ein Commit.** Die Commit-Message steht am Ende jedes Tasks wörtlich da und ist
-  **auf Englisch** — der Plan ist deutsch, die Git-Historie nicht. Übernimm sie wörtlich.
-- **Jeder Task hat RED → GREEN → VERIFIKATION.** Steht beim RED-Schritt eine erwartete
-  Fehlermeldung, muss die tatsächliche Ausgabe dazu passen. Passt sie nicht: **stoppen und
-  melden**, nicht weitermachen.
-- **Zeilennummern sind Orientierung, nicht Wahrheit.** Vor jedem Edit steht ein `grep`, der den
-  Anker findet. Benutze den `grep`, nicht die Zeilennummer.
-- **Nach jedem Task ist die volle Test-Suite grün.**
-- Schlägt ein Befehl fehl und der Plan nennt keinen Ausweg: **stoppen und melden.**
+- **Do the tasks strictly in order 0 → 3.** Skip nothing.
+- **One task = one commit.** The commit message is written out verbatim at the end of each task.
+  Use it as it stands.
+- **Every task has RED → GREEN → VERIFICATION.** Where a RED step names an expected error, the
+  actual output must match it. If it does not: **stop and report**, do not continue.
+- **Line numbers are orientation, not truth.** Every edit is preceded by a `grep` that finds the
+  anchor. Use the `grep`, not the line number.
+- **The full test suite is green after every task.**
+- If a command fails and the plan names no way out: **stop and report.**
 
-**Arbeitsverzeichnis.** Alle Befehle laufen im **Wurzelverzeichnis des Repositorys** — dort, wo
-`pyproject.toml` und `garden.yaml` liegen. Alle Pfade im Plan sind **relativ zu diesem
-Verzeichnis**; der Plan enthält keine absoluten Pfade und braucht keine.
+**Language.** Everything written into the repository is **English**: code, comments, docstrings,
+test names, commit messages, documentation. This plan is English for the same reason. Some
+existing files still contain German from before 2026-07-31 — do not match them, and do not
+translate them as a side effect of this plan either.
 
-**Werkzeug-Ersetzung — nach Task 0 einmal festlegen und danach überall gleich anwenden.**
+**Working directory.** All commands run in the **root of the repository** — where `pyproject.toml`
+and `garden.yaml` live. Every path in this plan is **relative to that directory**; the plan
+contains no absolute paths and needs none.
 
-| Im Plan geschrieben | Womit ersetzen, falls das nicht läuft |
+**Tool substitution — settle this once in Task 0, then apply it everywhere.**
+
+| Written in the plan | Replace with, if that does not run |
 |---|---|
-| `python3 -B -m pytest …` | `env3/bin/python -B -m pytest …`, sobald `env3/` existiert |
-| `garden fmt` | `cercis bin bin/git-* cola test extras/sphinxtogithub` und danach `isort --force-single-line-imports --py=39 --no-lines-before=STDLIB bin bin/git-* cola test extras/sphinxtogithub` |
+| `python3 -B -m pytest …` | `env3/bin/python -B -m pytest …`, as soon as `env3/` exists |
+| `garden fmt` | `cercis bin bin/git-* cola test extras/sphinxtogithub` followed by `isort --force-single-line-imports --py=39 --no-lines-before=STDLIB bin bin/git-* cola test extras/sphinxtogithub` |
 | `garden check/fmt` | `cercis --check bin bin/git-* cola test extras/sphinxtogithub` |
 
-> **Wichtig:** Legt Task 0 ein `env3/` an, dann gilt `env3/bin/python` für **jeden** weiteren
-> `pytest`-Aufruf in diesem Plan — die Befehle unten sind der Kürze halber alle mit `python3`
-> geschrieben. Ein `python3 -m pytest`, das mit `No module named pytest` abbricht, ist **kein**
-> RED, sondern die falsche Ersetzung.
+> **Important:** if Task 0 creates an `env3/`, then `env3/bin/python` applies to **every** further
+> `pytest` call in this plan — the commands below are all written with `python3` for brevity. A
+> `python3 -m pytest` that aborts with `No module named pytest` is **not** a RED, it is the wrong
+> substitution.
 
-Standard-Testbefehle:
+Standard test commands:
 
 ```bash
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p no:ruff -q cola test
@@ -60,119 +64,119 @@ QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p
 
 ---
 
-## 1. Was gebaut wird
+## 1. What is being built
 
-Wählt der Anwender **mehrere** Commits aus, zeigt die Dateiliste **die Vereinigung der Dateien,
-die diese Commits anfassen** — je Datei genau eine Zeile.
+When the user selects **several** commits, the file list shows **the union of the files those
+commits touch** — exactly one row per file.
 
-Heute versucht der Mehrfach-Zweig stattdessen eine **Spanne** (`git diff commits[0]~
-commits[-1]`) und stürzt dabei ab, bevor irgendetwas angezeigt wird (Falle **F1**).
+Today the multi-commit branch instead attempts a **range** (`git diff commits[0]~ commits[-1]`)
+and crashes before showing anything at all (trap **F1**).
 
-Festgelegte Entscheidungen:
+Settled decisions:
 
-| Frage | Entscheidung |
+| Question | Decision |
 |---|---|
-| Spanne oder Vereinigung? | **Vereinigung.** Vom Anwender so entschieden. Eine Spanne zeigt bei nicht zusammenhängender Auswahl Dateien, die nie gewählt wurden, verschluckt Änderungen, die sich innerhalb der Spanne aufheben, und liefert für jede Auswahl mit dem Root-Commit ein leeres Panel. Belege in §2. |
-| Wie wird die Vereinigung geholt? | Mit **einem** Aufruf: `git show <oid1> <oid2> … --format= --numstat --raw --no-renames -z`. `git show` nimmt mehrere Revisionen und liefert je Revision einen raw+numstat-Block in der übergebenen Reihenfolge — **exakt das Format, das `parse_status_and_numstat` bereits parst** (Falle **F3**). Der Parser wird **nicht** angefasst. |
-| Datei von mehreren Commits berührt? | **Eine** Zeile. Die Zahlen unter `+` und `-` werden **summiert**; Binärdateien behalten das `-`, das git statt einer Zahl schreibt (Falle **F7**). |
-| Welche Reihenfolge? | **Erstes Auftreten.** Für einen einzelnen Commit ist das buchstäblich die Ausgabe von git wie heute — die Einzelauswahl ändert ihr Verhalten damit **um kein Zeichen**. Alphabetisch zu sortieren wäre eine Verhaltensänderung für den Einzelfall und ist deshalb ein Nicht-Ziel (§3). |
-| Welches Statuszeichen (`A`/`M`/`D`)? | Das des **jüngsten** ausgewählten Commits, der die Datei anfasst. Ergibt sich von selbst: die Auswahl kommt nach `sort_by_generation` (`cola/widgets/dag.py:1597`) von alt nach jung, und `dict.update()` gewinnt zuletzt. |
-| `STAGE`/`WORKTREE` in der Auswahl? | Kommen mit. Es sind keine Revisionen, sie brauchen ihre eigenen Befehle (`git diff-index` / `git diff-files`) und **kein** `-z`. Macht **höchstens drei** git-Aufrufe, unabhängig davon, wie viele Commits ausgewählt sind. |
-| Eine Quelle scheitert? | Wird übersprungen, statt die ganze Liste zu leeren. Scheitern **alle**, ist die Liste leer — genau wie heute. |
-| Wo lebt der Code? | Alles in `cola/widgets/filelist.py`. Das Widget ist geteiltes Gut dreier Hosts; die Regel gehört ins Widget, nicht in die Hosts. |
+| Range or union? | **Union.** Decided by the user. A range shows files that were never selected when the selection is non-contiguous, swallows changes that cancel out inside the range, and yields an empty panel for any selection containing the root commit. Evidence in §2. |
+| How is the union fetched? | With **one** call: `git show <oid1> <oid2> … --format= --numstat --raw --no-renames -z`. `git show` accepts several revisions and returns one raw+numstat block per revision, in the order given — **exactly the format `parse_status_and_numstat` already parses** (trap **F3**). The parser is **not** touched. |
+| File touched by several commits? | **One** row. The numbers under `+` and `-` are **summed**; binary files keep the `-` git writes instead of a count (trap **F7**). |
+| Which order? | **First appearance.** For a single commit that is literally git's own output, exactly as today — so the single-commit case changes **by not one character**. Sorting alphabetically would change behaviour for the single-commit case and is therefore a non-goal (§3). |
+| Which status letter (`A`/`M`/`D`)? | That of the **newest** selected commit touching the file. It falls out for free: the selection arrives sorted old-to-new via `sort_by_generation` (`cola/widgets/dag.py:1597`), and `dict.update()` lets the last one win. |
+| `STAGE`/`WORKTREE` in the selection? | They come along. They are not revisions, they need their own commands (`git diff-index` / `git diff-files`) and **no** `-z`. Costs **at most three** git calls, no matter how many commits are selected. |
+| One source fails? | It is skipped rather than emptying the whole list. If **all** of them fail the list is empty — exactly as today. |
+| Where does the code live? | All of it in `cola/widgets/filelist.py`. The widget is shared by three hosts; the rule belongs in the widget, not in the hosts. |
 
-## 2. Warum Vereinigung — die Belege
+## 2. Why a union — the evidence
 
-Gemessen an einem eigens gebauten Repository (`C1` Root, `C2` legt `a.txt` an, `C3` legt
-`middle.txt` an, `C4` legt `tmp.txt` an, `C5` löscht `tmp.txt`):
+Measured against a purpose-built repository (`C1` root, `C2` adds `a.txt`, `C3` adds
+`middle.txt`, `C4` adds `tmp.txt`, `C5` deletes `tmp.txt`):
 
-| Auswahl | Spanne (`git diff C[0]~ C[-1]`) | Vereinigung |
+| Selection | Range (`git diff C[0]~ C[-1]`) | Union |
 |---|---|---|
-| `C2` + `C4`, `C3` übersprungen | `a.txt`, **`middle.txt`**, `tmp.txt` — `middle.txt` war nie ausgewählt | `a.txt`, `tmp.txt` |
-| `C4` + `C5` (legt an, löscht wieder) | **leer** — die Änderungen heben sich auf | `tmp.txt` (`+1`/`-1`) |
-| `C1` + `C3` (mit Root) | **leer** — `C1~` gibt es nicht, Exit 128 | `A`, `B`, `middle.txt` |
+| `C2` + `C4`, `C3` skipped | `a.txt`, **`middle.txt`**, `tmp.txt` — `middle.txt` was never selected | `a.txt`, `tmp.txt` |
+| `C4` + `C5` (adds, then deletes) | **empty** — the changes cancel out | `tmp.txt` (`+1`/`-1`) |
+| `C1` + `C3` (with the root) | **empty** — `C1~` does not exist, exit 128 | `A`, `B`, `middle.txt` |
 
-Der Root-Fall ist zugleich der Grund, warum der Absturz aus Falle **F1** so lange unbemerkt blieb:
-er tritt **nur bei gültiger Spanne** auf. Bei ungültiger Spanne greift der `status != 0`-Ausstieg
-vorher, und man sieht bloß ein leeres Panel.
+The root case is also the reason the crash in trap **F1** went unnoticed for so long: it only
+occurs for a **valid** range. For an invalid range the `status != 0` early return fires first and
+all you see is an empty panel.
 
-## 3. Nicht-Ziele
+## 3. Non-goals
 
-- **Keine Änderung an `parse_status_and_numstat`.** Sie parst die Ausgabe von `git show` über
-  mehrere Revisionen bereits richtig — gemessen, siehe Falle **F3**.
-- **Keine Änderung an `list_files` oder `FileTreeWidgetItem`.** Die neue Funktion liefert genau
-  das Zeilenformat `adds\tdels\tpath`, das beide schon erwarten.
-- **Keine alphabetische Sortierung der Dateiliste.** Sie wäre eine Verhaltensänderung für die
-  Einzelauswahl (heute: git-Reihenfolge) und ist nicht Teil des Auftrags.
-- **Keine Änderung am Beschreibungs-Panel.** Dessen Regel „bei Mehrfachauswahl den jüngsten
-  Commit zeigen" steht bereits richtig in `docs/plans/2026-08-01-commit-description-panel.md`.
-  Siehe §6.
-- **Keine Änderung an `cola/widgets/dag.py`, `cola/widgets/main.py` oder
-  `cola/sequenceeditor.py`.** Alle drei rufen `commits_selected(commits)` unverändert auf.
-- **Keine Behandlung von Tabulatoren in Pfaden.** `list_files` und `FileTreeWidgetItem` nehmen
-  seit jeher `path = texts[2]` nach `split('\t')`; die neue Funktion tut dasselbe. Ein Pfad mit
-  einem echten Tabulator wäre schon heute falsch dargestellt — das ist ein eigenständiges Thema.
-- **Kein `widget_version`-Bump**, kein neuer Zustandsschlüssel, keine neue Menü-Aktion.
+- **No change to `parse_status_and_numstat`.** It already parses `git show` output over several
+  revisions correctly — measured, see trap **F3**.
+- **No change to `list_files` or `FileTreeWidgetItem`.** The new function produces exactly the row
+  format `adds\tdels\tpath` that both already expect.
+- **No alphabetical sorting of the file list.** That would change behaviour for the single-commit
+  case (today: git's order) and is not part of the request.
+- **No change to the description panel.** Its rule "show the newest commit when several are
+  selected" is already correct in `docs/plans/2026-08-01-commit-description-panel.md`. See §6.
+- **No change to `cola/widgets/dag.py`, `cola/widgets/main.py` or `cola/sequenceeditor.py`.** All
+  three call `commits_selected(commits)` unchanged.
+- **No handling of tabs inside paths.** `list_files` and `FileTreeWidgetItem` have always taken
+  `path = texts[2]` after `split('\t')`; the new function does the same. A path containing a real
+  tab would already be displayed wrongly today — that is a separate subject.
+- **No translation of the German plan or German comments that already exist elsewhere.** New
+  material is English; old material is corrected when it is touched, not by this plan.
+- **No `widget_version` bump**, no new state key, no new menu action.
 
-## 4. Fallen — alle empirisch verifiziert
+## 4. Traps — all empirically verified
 
-| # | Falle | Beleg |
+| # | Trap | Evidence |
 |---|---|---|
-| **F1** | **Der heutige Mehrfach-Zweig stürzt ab.** `oid` wird nur im Einzel-Commit-Zweig zugewiesen (`cola/widgets/filelist.py:130`), aber nach dem `if`/`else` unbedingt gelesen (`:159`). | Gemessen an einem echten Repo, Auswahl zweier Commits über gültige Spanne: `UnboundLocalError: cannot access local variable 'oid' where it is not associated with a value`, geworfen in `cola/widgets/filelist.py:159` |
-| **F2** | **`--numstat -z` lässt den Pfad tabgetrennt.** Man könnte erwarten, dass `-z` auch die numstat-Felder NUL-trennt („use NULs as output field terminators"). Tut es **nicht** für den Pfad: die Zeile bleibt `adds\tdels\tpath`, nur der Datensatz endet auf NUL. Deshalb funktioniert `parse_status_and_numstat` unverändert. | Gemessen mit git 2.53.0: `git show <oid> --format= --numstat --raw --no-renames -z` → `:100644 100644 5626abf 9a72323 M<NUL>one.txt<NUL>1<TAB>0<TAB>one.txt<NUL>` |
-| **F3** | **`git show` nimmt mehrere Revisionen** und liefert je Revision einen eigenen raw+numstat-Block, **in der übergebenen Reihenfolge**, im selben NUL-Format wie für eine. Das ist der ganze Trick dieses Plans. | Gemessen: `git show C1 C2 …` → `:…A<NUL>a.txt<NUL>1<TAB>0<TAB>a.txt<NUL>:…M<NUL>f.txt<NUL>1<TAB>0<TAB>f.txt<NUL>`. `git show C2 C1` liefert dieselben Blöcke in umgekehrter Reihenfolge, sortiert also **nicht** um. |
-| **F4** | **Ein Merge-Commit liefert numstat ohne raw.** Der Statusteil fehlt komplett; `status_by_path` bleibt für diese Pfade leer und das Icon fällt auf den Dateinamen zurück. Das ist heute schon so und bleibt so. | Gemessen: `git show <merge> --format= --numstat --raw --no-renames -z` → nur `1<TAB>0<TAB>side.txt<NUL>`. Abgedeckt von `test_parser_tolerates_numstat_without_raw` |
-| **F5** | **`git show <root>` funktioniert, `<root>~` nicht.** Genau deshalb ist die Vereinigung für den Root-Commit richtig und die Spanne leer. | Gemessen: `git show <root> --format= --numstat --raw -z` → `:000000 100644 0000000 4286f42 A<NUL>root.txt<NUL>1<TAB>0<TAB>root.txt<NUL>`; `git diff <root>~ …` → Exit 128, `fatal: ambiguous argument …` |
-| **F6** | **Ein Test zählt die `git show`-Aufrufe.** `test_public_selection_reaches_all_standalone_consumers_synchronously` (`test/widgets_dag_history_test.py:371`) monkeypatcht `git.show` und prüft `len(show_calls) == 1` (`:399`) — bei Einzelauswahl. Der Ein-Aufruf-Entwurf dieses Plans hält das ein; „ein `show` je Commit" hätte es gebrochen. | `test/widgets_dag_history_test.py:399`; gemessen mit der neuen Implementierung: Einzelauswahl → 1 Aufruf, sechs Commits → **ebenfalls 1** |
-| **F7** | **Binärdateien haben `-` statt einer Zahl.** Wer die Zahlen summiert, muss das aushalten, sonst fliegt `ValueError` in `int()`. | Gemessen: `git show <oid> … -z` für eine Binärdatei → `-<TAB>-<TAB>b.bin<NUL>` |
-| **F8** | **Der Wortlaut des `UnboundLocalError` hängt von der Python-Version ab.** Ab 3.11 heißt es `cannot access local variable 'oid' where it is not associated with a value`, davor `local variable 'oid' referenced before assignment`. Der Fehler**typ** ist in beiden Fällen `UnboundLocalError` — darauf prüfen, nicht auf den Text. | Der lange Wortlaut gemessen unter Python 3.14.4. Der kurze Wortlaut ist **nicht** gemessen (keine 3.9/3.10 vorhanden) und stammt aus der bekannten CPython-Änderung |
-| **F9** | **`cola/widgets/filelist.py` benutzt keine Typannotationen** und hat kein `from __future__ import annotations`. Neuer Code darf deshalb **keine** Annotationen mitbringen: `int \| None` wäre unter dem Zielinterpreter 3.9 ein Laufzeitfehler. | Gemessen: `grep -c "def .*) ->" cola/widgets/filelist.py` → `0`; `grep -n "from __future__" cola/widgets/filelist.py` → kein Treffer (`cola/git.py:1` und `cola/core.py:6` haben ihn, `filelist.py` nicht) |
-| **F10** | **`pytest.ini` setzt `--doctest-modules`.** Ein `\t` in einem Docstring ist ein echter Tabulator; im Docstring **`\\t`** schreiben, so wie es `parse_status_and_numstat` bereits tut (`cola/widgets/filelist.py:292`). Ein `>>>` würde zum Test. | `pytest.ini:3`; `cola/widgets/filelist.py:292` |
-| **F11** | **Es gibt einen dritten Host.** `cola/sequenceeditor.py:227` hängt `FileWidget.commits_selected` an die Auswahl des Rebase-Editors. Er ist **ungefährlich**: `cola/sequenceeditor.py:562` schneidet die Liste mit `commits = commits[-1:]` auf **genau einen** Commit zurück, erreicht den Mehrfach-Zweig also nie. Für ihn ändert sich nichts. | `cola/sequenceeditor.py:226-228`, `:559-563` |
-| **F12** | **Kein einziger Test fasst den Mehrfach-Zweig an.** Deshalb ist der Fehler überhaupt ins Release gekommen, und deshalb ist die Suite heute grün, obwohl die Funktion kaputt ist. | Gemessen: `grep -rn "commits_selected(\[.*,.*\])" test/` → kein Treffer |
-| **F13** | **`STAGE` und `WORKTREE` stehen in der sortierten Auswahl immer hinten.** `RepoReader` gibt ihnen `generation = parent_commit.generation + 1` (`cola/models/dag.py:415`, `:431`), und die Auswahl läuft durch `sort_by_generation`. Deshalb gewinnt ihr Status beim `dict.update()` zuletzt — was richtig ist, sie sind der jüngste Stand. | `cola/models/dag.py:405-431`, `cola/widgets/dag.py:1597` |
-| **F14** | **Zeitgleich läuft `docs/plans/2026-08-01-commit-description-panel.md`** und ändert **dieselben zwei Dateien**: es hängt `all_paths()` an `FileWidget` (dessen Task 2) und Tests an `test/widgets_history_filelist_test.py`. Verschiedene Methoden, aber dieselbe Datei. Siehe §6. | `docs/plans/2026-08-01-commit-description-panel.md`, Task 2 |
+| **F1** | **Today's multi-commit branch crashes.** `oid` is assigned only in the single-commit branch (`cola/widgets/filelist.py:130`) but read unconditionally after the `if`/`else` (`:159`). | Measured against a real repo, selecting two commits over a valid range: `UnboundLocalError: cannot access local variable 'oid' where it is not associated with a value`, raised at `cola/widgets/filelist.py:159` |
+| **F2** | **`--numstat -z` leaves the path tab-separated.** One might expect `-z` to NUL-separate the numstat fields too ("use NULs as output field terminators"). It does **not** for the path: the row stays `adds\tdels\tpath`, only the record ends with NUL. That is why `parse_status_and_numstat` works unchanged. | Measured with git 2.53.0: `git show <oid> --format= --numstat --raw --no-renames -z` → `:100644 100644 5626abf 9a72323 M<NUL>one.txt<NUL>1<TAB>0<TAB>one.txt<NUL>` |
+| **F3** | **`git show` accepts several revisions** and returns one raw+numstat block per revision, **in the order given**, in the same NUL format it uses for a single one. This is the whole trick of this plan. | Measured: `git show C1 C2 …` → `:…A<NUL>a.txt<NUL>1<TAB>0<TAB>a.txt<NUL>:…M<NUL>f.txt<NUL>1<TAB>0<TAB>f.txt<NUL>`. `git show C2 C1` returns the same blocks in reverse, so it does **not** reorder. |
+| **F4** | **A merge commit yields numstat without raw.** The status part is missing entirely; `status_by_path` stays empty for those paths and the icon falls back to the filename. That is already true today and stays true. | Measured: `git show <merge> --format= --numstat --raw --no-renames -z` → only `1<TAB>0<TAB>side.txt<NUL>`. Covered by `test_parser_tolerates_numstat_without_raw` |
+| **F5** | **`git show <root>` works, `<root>~` does not.** Precisely why the union is right for the root commit and the range is empty. | Measured: `git show <root> --format= --numstat --raw -z` → `:000000 100644 0000000 4286f42 A<NUL>root.txt<NUL>1<TAB>0<TAB>root.txt<NUL>`; `git diff <root>~ …` → exit 128, `fatal: ambiguous argument …` |
+| **F6** | **A test counts the `git show` calls.** `test_public_selection_reaches_all_standalone_consumers_synchronously` (`test/widgets_dag_history_test.py:371`) monkeypatches `git.show` and asserts `len(show_calls) == 1` (`:399`) for a single-commit selection. The one-call design in this plan honours that; "one `show` per commit" would have broken it. | `test/widgets_dag_history_test.py:399`; measured with the new implementation: single selection → 1 call, six commits → **also 1** |
+| **F7** | **Binary files carry `-` instead of a number.** Anything summing the numbers has to tolerate that, or `int()` raises `ValueError`. | Measured: `git show <oid> … -z` for a binary file → `-<TAB>-<TAB>b.bin<NUL>` |
+| **F8** | **The wording of `UnboundLocalError` depends on the Python version.** From 3.11 on it reads `cannot access local variable 'oid' where it is not associated with a value`, before that `local variable 'oid' referenced before assignment`. The exception **type** is `UnboundLocalError` in both cases — check for that, not for the text. | The long wording measured under Python 3.14.4. The short wording is **not** measured (no 3.9/3.10 available) and comes from the known CPython change |
+| **F9** | **`cola/widgets/filelist.py` uses no type annotations** and has no `from __future__ import annotations`. New code must therefore carry **no** annotations: `int \| None` would be a runtime error under the 3.9 target interpreter. | Measured: `grep -c "def .*) ->" cola/widgets/filelist.py` → `0`; `grep -n "from __future__" cola/widgets/filelist.py` → no hit (`cola/git.py:1` and `cola/core.py:6` have it, `filelist.py` does not) |
+| **F10** | **`pytest.ini` sets `--doctest-modules`.** A `\t` in a docstring is a real tab; write **`\\t`** in docstrings, exactly as `parse_status_and_numstat` already does (`cola/widgets/filelist.py:292`). A `>>>` would become a test. | `pytest.ini:3`; `cola/widgets/filelist.py:292` |
+| **F11** | **There is a third host.** `cola/sequenceeditor.py:227` connects `FileWidget.commits_selected` to the rebase editor's selection. It is **harmless**: `cola/sequenceeditor.py:562` truncates the list with `commits = commits[-1:]` to **exactly one** commit, so it never reaches the multi-commit branch. Nothing changes for it. | `cola/sequenceeditor.py:226-228`, `:559-563` |
+| **F12** | **Not a single test touches the multi-commit branch.** That is how the bug shipped, and why the suite is green today even though the function is broken. | Measured: `grep -rn "commits_selected(\[.*,.*\])" test/` → no hit |
+| **F13** | **`STAGE` and `WORKTREE` always sit last in the sorted selection.** `RepoReader` gives them `generation = parent_commit.generation + 1` (`cola/models/dag.py:415`, `:431`), and the selection passes through `sort_by_generation`. That is why their status wins the `dict.update()` — which is correct, they are the newest state. | `cola/models/dag.py:405-431`, `cola/widgets/dag.py:1597` |
+| **F14** | **`docs/plans/2026-08-01-commit-description-panel.md` runs in parallel** and changes **the same two files**: it appends `all_paths()` to `FileWidget` (its Task 2) and tests to `test/widgets_history_filelist_test.py`. Different methods, same files. See §6. | `docs/plans/2026-08-01-commit-description-panel.md`, Task 2 |
 
-## 5. Vorhandenes, das wiederverwendet wird (nicht neu bauen)
+## 5. What already exists and is reused (do not rebuild)
 
-| Vorhanden | Wo | Rolle in diesem Plan |
+| Exists | Where | Role in this plan |
 |---|---|---|
-| `parse_status_and_numstat(output, separator)` | `cola/widgets/filelist.py:285` | **Ist** der Parser. Verarbeitet die Mehr-Revisionen-Ausgabe von `git show` unverändert (Falle **F3**) und verträgt numstat ohne raw (Falle **F4**). Wird **nicht** angefasst. |
-| `FileWidget.list_files(files_log, status_by_path=None)` | `cola/widgets/filelist.py:167` | **Ist** die Anzeige. Leert selbst vorweg, deshalb braucht der leere Fall keinen Sonderweg. Erwartet Zeilen `adds\tdels\tpath` — genau das liefert die neue Funktion. |
-| `app_context`-Fixture | `test/helper.py:85` | **Ist** das Testrepository: echtes `git init` in einem Temp-Verzeichnis, `chdir` hinein, `A` und `B` gestaged (noch nicht committet), echtes `git`/`cfg`/`MainModel`. Kein eigenes Repo bauen, `context.git` nicht mocken. |
-| `qapp`, `managed_qobject` | `test/widgets_history_filelist_test.py:21`, `:31` | **Stehen schon in der Datei**, die dieser Plan erweitert. Nicht neu schreiben, nicht kopieren. |
-| `_fake_commit(oid, summary='summary')` | `test/widgets_history_filelist_test.py:135` | **Ist** der Commit-Stellvertreter. `commits_selected` liest ausschließlich `.oid`. |
-| `_git(*args)` mit `subprocess` + `.strip()` | `test/widgets_main_history_test.py:138`, `test/widgets_history_checkout_test.py:52` | **Vorlage** für den git-Helfer, den `test/widgets_history_filelist_test.py` noch nicht hat. Wörtlich dieselbe Form übernehmen. |
-| `dag.STAGE`, `dag.WORKTREE` | `cola/models/dag.py:17-18` | Schon importiert (`cola/widgets/filelist.py:11`). Kein neuer Import. |
+| `parse_status_and_numstat(output, separator)` | `cola/widgets/filelist.py:285` | **Is** the parser. Handles the multi-revision output of `git show` unchanged (trap **F3**) and tolerates numstat without raw (trap **F4**). **Not** touched. |
+| `FileWidget.list_files(files_log, status_by_path=None)` | `cola/widgets/filelist.py:167` | **Is** the display. Clears itself first, so the empty case needs no special path. Expects rows `adds\tdels\tpath` — exactly what the new function produces. |
+| `app_context` fixture | `test/helper.py:85` | **Is** the test repository: a real `git init` in a temp directory, `chdir` into it, `A` and `B` staged (not yet committed), a real `git`/`cfg`/`MainModel`. Do not build your own repo, do not mock `context.git`. |
+| `qapp`, `managed_qobject` | `test/widgets_history_filelist_test.py:21`, `:31` | **Already in the file** this plan extends. Do not rewrite them, do not copy them. |
+| `_fake_commit(oid, summary='summary')` | `test/widgets_history_filelist_test.py:135` | **Is** the commit stand-in. `commits_selected` reads nothing but `.oid`. |
+| `_git(*args)` with `subprocess` + `.strip()` | `test/widgets_main_history_test.py:138`, `test/widgets_history_checkout_test.py:52` | **Template** for the git helper that `test/widgets_history_filelist_test.py` does not have yet. Copy the form literally. |
+| `dag.STAGE`, `dag.WORKTREE` | `cola/models/dag.py:17-18` | Already imported (`cola/widgets/filelist.py:11`). No new import. |
 
-## 6. Verhältnis zum Beschreibungs-Panel
+## 6. Relationship to the description panel
 
-`docs/plans/2026-08-01-commit-description-panel.md` läuft parallel. Abgrenzung:
+`docs/plans/2026-08-01-commit-description-panel.md` runs in parallel. The boundary:
 
-- **Dieser Plan ändert die Dateiliste, jener das Textfeld darüber.** Die Regel „bei
-  Mehrfachauswahl zeigt die Beschreibung den jüngsten Commit" ist dort bereits festgelegt
-  (§1 dieses Plans: „Mehrere Commits ausgewählt? → **jüngsten** (`selection[-1]`)") und in Task 4,
-  Anker 4 verdrahtet. **Hier ist dafür nichts zu tun.**
-- **Falle F8 jenes Plans wird durch diesen Plan gegenstandslos.** Sie beschreibt genau den
-  `UnboundLocalError` und sagt „wird separat behoben, nicht hier" — das ist dieser Plan. Jener
-  Plan prüft vor seinem Task 4 selbst nach, ob die Stelle repariert ist. Task 3 hier pflegt den
-  Hinweis nach.
-- **Eine Nebenwirkung, die dort bekannt sein sollte:** `all_paths()` liefert nach diesem Plan bei
-  Mehrfachauswahl die Pfade **aller** ausgewählten Commits, während die Beschreibung nur die
-  Message des jüngsten zeigt. Ein Dateiname in dieser Message kann also markiert werden, obwohl
-  ihn ein *anderer* ausgewählter Commit angefasst hat. Das ist vertretbar — markiert wird, was in
-  der Liste darunter steht — aber es ist eine bewusste Entscheidung, keine Unachtsamkeit.
-- **Reihenfolge der beiden Pläne ist egal.** Sie berühren verschiedene Methoden. Beide Pläne
-  haben denselben Arbeitsbaum-Wächter (Task 1 hier, Task 2 dort).
+- **This plan changes the file list, that one changes the text field above it.** The rule "on a
+  multi-commit selection the description shows the newest commit" is already settled there (its §1:
+  "Mehrere Commits ausgewählt? → **jüngsten** (`selection[-1]`)") and wired up in its Task 4,
+  anchor 4. **Nothing to do here for that.**
+- **Trap F8 of that plan becomes moot through this one.** It describes exactly this
+  `UnboundLocalError` and says "wird separat behoben, nicht hier" — this is that separate fix.
+  That plan re-checks the spot itself before its Task 4. Task 3 here updates the note.
+- **A side effect that should be known there:** after this plan `all_paths()` returns the paths of
+  **all** selected commits, while the description shows only the newest commit's message. A
+  filename in that message can therefore be highlighted even though a *different* selected commit
+  touched it. That is acceptable — what gets highlighted is what stands in the list below — but it
+  is a deliberate decision, not an oversight.
+- **The order of the two plans does not matter.** They touch different methods. Both plans carry
+  the same working-tree guard (Task 1 here, Task 2 there).
 
 ---
 
 # TASKS
 
-## Task 0 — Testlauf sicherstellen
+## Task 0 — Make sure the tests run
 
-> **Blockierend. Kein Commit.** Ziel ist eine einzige Feststellung: **welcher Testbefehl läuft
-> hier?** Jeder folgende Task hängt an einer beobachteten RED- und GREEN-Ausgabe.
+> **Blocking. No commit.** The goal is a single finding: **which test command works here?** Every
+> task that follows depends on an observed RED and GREEN output.
 
 ```bash
 python3 -m pytest --version 2>&1 | head -1
@@ -181,14 +185,13 @@ command -v garden cercis isort pyupgrade mypy
 python3 -c "import qtpy; print('qtpy', qtpy.API_NAME)"
 ```
 
-> **Achtung — in der Umgebung, in der dieser Plan geschrieben wurde, war _nichts_ davon
-> installiert.** Gemessen am 2026-07-31: `pytest`, `cercis`, `isort`, `pyupgrade`, `mypy`,
-> `garden` und `ruff` fehlen alle; `env3/` gibt es nicht; `python3` ist 3.14.4; einzig `qtpy`
-> (vendored im Repo-Wurzelverzeichnis) und `PyQt5` sind vorhanden, `PyQt6` nicht. Auch
-> `python3 -m venv` scheitert (`ensurepip` fehlt, `python3-venv` nicht installiert) und
-> `python3 -m pip` gibt es nicht.
+> **Careful — in the environment where this plan was written, _none_ of that was installed.**
+> Measured on 2026-07-31: `pytest`, `cercis`, `isort`, `pyupgrade`, `mypy`, `garden` and `ruff`
+> were all missing; there was no `env3/`; `python3` was 3.14.4; only `qtpy` (vendored in the
+> repository root) and `PyQt5` were present, `PyQt6` was not. `python3 -m venv` also failed
+> (`ensurepip` missing, `python3-venv` not installed) and there was no `python3 -m pip`.
 
-Läuft **kein** Interpreter mit `pytest`, einen der beiden Wege versuchen:
+If **no** interpreter has `pytest`, try one of the two routes:
 
 ```bash
 garden dev/virtualenv && garden dev
@@ -198,43 +201,43 @@ garden dev/virtualenv && garden dev
 python3 -m venv --system-site-packages env3 && env3/bin/python -m ensurepip --upgrade && env3/bin/pip install -e '.[docs,dev,testing,extras]'
 ```
 
-Scheitert auch das: **STOPP und melden.** Dieser Plan ist ohne laufende Tests nicht ausführbar —
-er ist vollständig TDD-strukturiert, und jede RED-Erwartung unten ist eine Beobachtung, die
-gemacht werden muss.
+If that fails too: **STOP and report.** This plan cannot be executed without running tests — it is
+structured entirely around TDD, and every RED expectation below is an observation that has to be
+made.
 
-### Verifikation
+### Verification
 
 ```bash
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p no:ruff -q cola test 2>&1 | tail -5
 ```
 
-**Erwartet:** `NNN passed`, kein `failed`, kein `error`. **Notiere `NNN` als Baseline.**
+**Expected:** `NNN passed`, no `failed`, no `error`. **Note `NNN` as the baseline.**
 
 ---
 
-## Task 1 — Zeilen zusammenfassen
+## Task 1 — Fold the rows together
 
-**Ziel:** Eine reine Funktion ohne Qt und ohne Git: `merge_numstat_rows(rows)` macht aus den
-numstat-Zeilen mehrerer Commits eine Zeile je Pfad.
+**Goal:** a pure function with no Qt and no git: `merge_numstat_rows(rows)` turns the numstat rows
+of several commits into one row per path.
 
-> Absichtlich ohne Qt geschrieben, damit sie vollständig durch einen Tabellentest festgelegt
-> werden kann. Sie ist das einzige Stück echte Logik in diesem Plan.
+> Deliberately written without Qt so that it can be pinned down entirely by a table test. It is
+> the only piece of real logic in this plan.
 
-### Schritt 1.1 — Arbeitsbaum prüfen (Falle **F14**)
+### Step 1.1 — Check the working tree (trap **F14**)
 
 ```bash
 git status --short cola/widgets/filelist.py test/widgets_history_filelist_test.py
 ```
 
-Sind dort Änderungen, die **nicht von dir** stammen: **stoppen und melden**, statt darüber zu
-schreiben. Der Beschreibungs-Panel-Plan ändert dieselben zwei Dateien.
+If there are changes there that are **not yours**: **stop and report** instead of writing over
+them. The description-panel plan changes the same two files.
 
-### Schritt 1.2 (RED) — Tests schreiben
+### Step 1.2 (RED) — Write the tests
 
-Ergänze in `test/widgets_history_filelist_test.py` den Import — **eine Zeile**, in derselben
-Gruppe, alphabetisch (`merge_numstat_rows` vor `parse_status_and_numstat`):
+Add the import to `test/widgets_history_filelist_test.py` — **one line**, in the same group,
+alphabetically (`merge_numstat_rows` before `parse_status_and_numstat`):
 
-Anker:
+Anchor:
 
 ```bash
 grep -n "^from cola.widgets.filelist import" test/widgets_history_filelist_test.py
@@ -244,66 +247,66 @@ grep -n "^from cola.widgets.filelist import" test/widgets_history_filelist_test.
 from cola.widgets.filelist import merge_numstat_rows
 ```
 
-Hänge ans **Ende** von `test/widgets_history_filelist_test.py` an:
+Append to the **end** of `test/widgets_history_filelist_test.py`:
 
 ```python
 @pytest.mark.parametrize(
     ('scenario', 'rows', 'expected'),
     (
-        ('nichts', [], []),
-        ('eine Zeile', ['1\t0\ta.py'], ['1\t0\ta.py']),
+        ('nothing at all', [], []),
+        ('a single row', ['1\t0\ta.py'], ['1\t0\ta.py']),
         (
-            'zwei Dateien bleiben zwei Zeilen',
+            'two files stay two rows',
             ['1\t0\ta.py', '2\t3\tb.py'],
             ['1\t0\ta.py', '2\t3\tb.py'],
         ),
-        ('dieselbe Datei wird summiert', ['1\t0\ta.py', '2\t3\ta.py'], ['3\t3\ta.py']),
+        ('the same file is summed', ['1\t0\ta.py', '2\t3\ta.py'], ['3\t3\ta.py']),
         (
-            'die Reihenfolge des ersten Auftretens gilt',
+            'the order of first appearance wins',
             ['1\t0\tb.py', '1\t0\ta.py', '1\t0\tb.py'],
             ['2\t0\tb.py', '1\t0\ta.py'],
         ),
-        ('binaer bleibt binaer', ['-\t-\tb.bin'], ['-\t-\tb.bin']),
-        ('binaer steckt an', ['1\t0\tb.bin', '-\t-\tb.bin'], ['-\t-\tb.bin']),
+        ('binary stays binary', ['-\t-\tb.bin'], ['-\t-\tb.bin']),
+        ('binary is contagious', ['1\t0\tb.bin', '-\t-\tb.bin'], ['-\t-\tb.bin']),
         (
-            'binaer zuerst steckt genauso an',
+            'binary first is just as contagious',
             ['-\t-\tb.bin', '1\t0\tb.bin'],
             ['-\t-\tb.bin'],
         ),
-        ('unvollstaendige Zeile wird verworfen', ['1\t0'], []),
-        ('leere Zeile wird verworfen', [''], []),
+        ('an incomplete row is dropped', ['1\t0'], []),
+        ('an empty row is dropped', [''], []),
     ),
 )
 def test_merge_numstat_rows_lists_every_path_once(scenario, rows, expected):
-    """Eine Zeile je Pfad, Zahlen summiert, Binaerdateien unangetastet."""
+    """One row per path, counts summed, binary files left alone."""
     assert merge_numstat_rows(rows) == expected
 ```
 
-**RED ausführen:**
+**Run RED:**
 
 ```bash
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p no:ruff -q test/widgets_history_filelist_test.py 2>&1 | tail -8
 ```
 
-**Erwartete Fehlermeldung — die ganze Datei scheitert beim Einsammeln:**
+**Expected error — the whole file fails during collection:**
 
 ```
 ImportError: cannot import name 'merge_numstat_rows' from 'cola.widgets.filelist'
 ```
 
-> Das ist ein **Collection-Error**, kein einzelner Testfehler, und hier beabsichtigt: die Funktion
-> existiert noch nicht. Zur Kontrolle vorher: `grep -c merge_numstat_rows cola/widgets/filelist.py`
-> → `0`.
+> This is a **collection error**, not a single test failure, and here that is intended: the
+> function does not exist yet. To confirm beforehand:
+> `grep -c merge_numstat_rows cola/widgets/filelist.py` → `0`.
 
-### Schritt 1.3 (GREEN) — Funktion anlegen
+### Step 1.3 (GREEN) — Add the function
 
-**Anker:**
+**Anchor:**
 
 ```bash
 grep -n "^def parse_status_and_numstat(output, separator):" cola/widgets/filelist.py
 ```
 
-**Erwartet:** genau **ein** Treffer. Füge **direkt davor** ein:
+**Expected:** exactly **one** hit. Insert **directly before it**:
 
 ```python
 def _add_count(total, field):
@@ -344,30 +347,30 @@ def merge_numstat_rows(rows):
 
 ```
 
-> **Keine Typannotationen** (Falle **F9**). **`\\t` im Docstring**, nicht `\t` (Falle **F10**).
-> Die Reihenfolge „erstes Auftreten" kostet keinen Code: `dict` behält seit Python 3.7 die
-> Einfügereihenfolge.
+> **No type annotations** (trap **F9**). **`\\t` in the docstring**, not `\t` (trap **F10**).
+> The "first appearance" order costs no code: `dict` has preserved insertion order since
+> Python 3.7.
 
-### Verifikation
+### Verification
 
 ```bash
 garden fmt
 ```
 
-> Ohne `garden` die Ersatzbefehle aus der Tabelle in §0. Ist **kein** Formatierer installiert:
-> notieren und weitermachen — der Code unten ist von Hand auf 88 Zeichen gesetzt.
+> Without `garden`, the substitutes from the table in §0. If **no** formatter is installed: note
+> it and carry on — the code above is hand-set to 88 columns.
 
 ```bash
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p no:ruff -q test/widgets_history_filelist_test.py 2>&1 | tail -3
 ```
 
-**Erwartet:** alle passed, **10 Tests mehr** als vorher.
+**Expected:** all passed, **10 tests more** than before.
 
 ```bash
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p no:ruff -q cola test 2>&1 | tail -3
 ```
 
-**Erwartet:** Baseline + 10 passed, 0 failed.
+**Expected:** baseline + 10 passed, 0 failed.
 
 ### Commit
 
@@ -381,30 +384,30 @@ commits touch and keeps the order of its first appearance. Binary files carry
 
 ---
 
-## Task 2 — Die Dateiliste zeigt die Vereinigung
+## Task 2 — The file list shows the union
 
-**Ziel:** `commits_selected` beschreibt die Auswahl als Vereinigung statt als Spanne — und
-stürzt dabei nicht mehr ab.
+**Goal:** `commits_selected` describes the selection as a union instead of a range — and stops
+crashing while doing it.
 
-### Schritt 2.1 (RED) — Tests schreiben
+### Step 2.1 (RED) — Write the tests
 
-Ergänze oben in `test/widgets_history_filelist_test.py` den Import. Anker:
+Add the import at the top of `test/widgets_history_filelist_test.py`. Anchor:
 
 ```bash
 grep -n "^import sys$" test/widgets_history_filelist_test.py
 ```
 
-Füge **direkt davor** ein (alphabetisch vor `sys`):
+Insert **directly before it** (alphabetically before `sys`):
 
 ```python
 import subprocess
 ```
 
-Hänge ans **Ende** der Datei an:
+Append to the **end** of the file:
 
 ```python
 def _git(*args):
-    """Wie in test/widgets_main_history_test.py: mit strip()."""
+    """Same form as in test/widgets_main_history_test.py: with strip()."""
     return subprocess.run(
         ('git', *args), check=True, text=True, capture_output=True
     ).stdout.strip()
@@ -416,7 +419,7 @@ def _write(path, content):
 
 
 def _commit_file(path, content, message):
-    """Schreibt, staged und committet eine Datei - und liefert die OID."""
+    """Write, stage and commit one file, and return its oid."""
     _write(path, content)
     _git('add', path)
     _git('commit', '-q', '-m', message)
@@ -425,10 +428,10 @@ def _commit_file(path, content, message):
 
 @pytest.fixture
 def history_repo(app_context):
-    """Sechs Commits, an denen sich Vereinigung und Spanne unterscheiden.
+    """Six commits where a union and a range disagree.
 
-    app_context hat A und B bereits gestaged, aber noch nichts committet - der
-    erste Commit hier ist also der Root-Commit mit genau diesen beiden Dateien.
+    app_context has already staged A and B but committed nothing, so the first
+    commit made here is the root commit holding exactly those two files.
     """
     _git('commit', '-q', '-m', 'C1 root')
     oids = {'root': _git('rev-parse', 'HEAD')}
@@ -443,7 +446,7 @@ def history_repo(app_context):
 
 
 def _listed(widget):
-    """(Pfad, +, -) je Zeile, in Anzeigereihenfolge."""
+    """(path, +, -) per row, in display order."""
     return [
         (
             widget.topLevelItem(row).path,
@@ -461,7 +464,7 @@ def _paths(widget):
 def test_two_selected_commits_list_the_files_of_both(
     qapp, app_context, history_repo, managed_qobject
 ):
-    """Der gemeldete Fehler: zwei Commits ueber gueltiger Spanne."""
+    """The reported bug: two commits spanning a valid range."""
     widget = managed_qobject(FileWidget(app_context, None))
 
     widget.commits_selected(
@@ -474,7 +477,7 @@ def test_two_selected_commits_list_the_files_of_both(
 def test_non_contiguous_selection_ignores_unselected_commits(
     qapp, app_context, history_repo, managed_qobject
 ):
-    """C3 wurde uebersprungen - middle.txt gehoert nicht in die Liste."""
+    """C3 was skipped, so middle.txt does not belong in the list."""
     widget = managed_qobject(FileWidget(app_context, None))
 
     widget.commits_selected(
@@ -487,7 +490,7 @@ def test_non_contiguous_selection_ignores_unselected_commits(
 def test_selection_including_the_root_commit_lists_its_files(
     qapp, app_context, history_repo, managed_qobject
 ):
-    """Der Root-Commit hat kein Elternteil - trotzdem sind seine Dateien da."""
+    """The root commit has no parent, and its files still show up."""
     widget = managed_qobject(FileWidget(app_context, None))
 
     widget.commits_selected(
@@ -500,7 +503,7 @@ def test_selection_including_the_root_commit_lists_its_files(
 def test_file_added_and_deleted_across_the_selection_stays_listed(
     qapp, app_context, history_repo, managed_qobject
 ):
-    """C4 legt tmp.txt an, C5 loescht es - beruehrt ist es trotzdem."""
+    """C4 adds tmp.txt and C5 deletes it; it was touched either way."""
     widget = managed_qobject(FileWidget(app_context, None))
 
     widget.commits_selected(
@@ -513,7 +516,7 @@ def test_file_added_and_deleted_across_the_selection_stays_listed(
 def test_file_touched_twice_is_listed_once_with_summed_counts(
     qapp, app_context, history_repo, managed_qobject
 ):
-    """Zwei Commits an derselben Datei ergeben eine Zeile, keine zwei."""
+    """Two commits on the same file make one row, not two."""
     widget = managed_qobject(FileWidget(app_context, None))
 
     widget.commits_selected(
@@ -526,7 +529,7 @@ def test_file_touched_twice_is_listed_once_with_summed_counts(
 def test_single_commit_selection_is_unchanged(
     qapp, app_context, history_repo, managed_qobject
 ):
-    """Charakterisierung: die Einzelauswahl verhaelt sich wie bisher."""
+    """Characterization: a single-commit selection behaves as it always did."""
     widget = managed_qobject(FileWidget(app_context, None))
 
     widget.commits_selected([_fake_commit(history_repo['a_again'])])
@@ -537,7 +540,7 @@ def test_single_commit_selection_is_unchanged(
 def test_unknown_revision_leaves_the_list_empty(
     qapp, app_context, history_repo, managed_qobject
 ):
-    """Charakterisierung: eine unbekannte OID laesst nichts uebrig."""
+    """Characterization: an unknown oid leaves nothing behind."""
     widget = managed_qobject(FileWidget(app_context, None))
 
     widget.commits_selected([_fake_commit(history_repo['a']), _fake_commit('d' * 40)])
@@ -546,10 +549,10 @@ def test_unknown_revision_leaves_the_list_empty(
 
 
 def _dirty_worktree():
-    """Eine gestagte und eine ungestagte Aenderung, wie sie die History zeigt.
+    """One staged and one unstaged change, as the history shows them.
 
-    Kein update_status() noetig: commits_selected fragt fuer STAGE und WORKTREE
-    direkt git, nicht das Modell. Verifiziert.
+    No update_status() needed: for STAGE and WORKTREE commits_selected asks git
+    directly, not the model. Verified.
     """
     _write('staged.txt', 's\n')
     _git('add', 'staged.txt')
@@ -560,7 +563,7 @@ def _dirty_worktree():
 def test_stage_pseudo_commit_lists_the_staged_files(
     qapp, app_context, history_repo, managed_qobject
 ):
-    """Charakterisierung: STAGE ist keine Revision, sondern der Index."""
+    """Characterization: STAGE is not a revision, it is the index."""
     widget = managed_qobject(FileWidget(app_context, None))
     _dirty_worktree()
 
@@ -572,7 +575,7 @@ def test_stage_pseudo_commit_lists_the_staged_files(
 def test_worktree_pseudo_commit_lists_the_modified_files(
     qapp, app_context, history_repo, managed_qobject
 ):
-    """Charakterisierung: WORKTREE ist der Arbeitsbaum gegen den Index."""
+    """Characterization: WORKTREE is the working tree against the index."""
     widget = managed_qobject(FileWidget(app_context, None))
     _dirty_worktree()
 
@@ -584,7 +587,7 @@ def test_worktree_pseudo_commit_lists_the_modified_files(
 def test_commit_with_stage_and_worktree_lists_all_of_them(
     qapp, app_context, history_repo, managed_qobject
 ):
-    """Commit, Index und Arbeitsbaum zusammen - drei Quellen, eine Liste."""
+    """Commit, index and working tree together: three sources, one list."""
     widget = managed_qobject(FileWidget(app_context, None))
     _dirty_worktree()
 
@@ -602,10 +605,10 @@ def test_commit_with_stage_and_worktree_lists_all_of_them(
 def test_one_git_show_serves_the_whole_selection(
     qapp, app_context, history_repo, managed_qobject
 ):
-    """Ein Aufruf fuer alle Commits - nicht einer je Commit.
+    """One call for all commits, not one per commit.
 
-    Haelt test_public_selection_reaches_all_standalone_consumers_synchronously
-    ein, das genau einen git-show-Aufruf erwartet.
+    Honours test_public_selection_reaches_all_standalone_consumers_synchronously,
+    which expects exactly one git show call.
     """
     widget = managed_qobject(FileWidget(app_context, None))
     calls = []
@@ -621,69 +624,69 @@ def test_one_git_show_serves_the_whole_selection(
     assert list(calls[0]) == selection
 ```
 
-Ergänze den fehlenden Import für `dag`. Anker:
+Add the missing import for `dag`. Anchor:
 
 ```bash
 grep -n "^from cola import icons$" test/widgets_history_filelist_test.py
 ```
 
-Füge **direkt darunter** ein:
+Insert **directly below it**:
 
 ```python
 from cola.models import dag
 ```
 
-**RED ausführen:**
+**Run RED:**
 
 ```bash
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p no:ruff -q test/widgets_history_filelist_test.py 2>&1 | tail -25
 ```
 
-**Erwartet: 7 der 11 neuen Tests rot, 4 grün.** Der genaue Schnitt ist gemessen:
+**Expected: 7 of the 11 new tests red, 4 green.** The exact split is measured:
 
-| Test | heute | Grund |
+| Test | today | Reason |
 |---|---|---|
 | `..._two_selected_commits_list_the_files_of_both` | **RED** | `UnboundLocalError` |
 | `..._non_contiguous_selection_ignores_unselected_commits` | **RED** | `UnboundLocalError` |
-| `..._selection_including_the_root_commit_lists_its_files` | **RED** | **`AssertionError: assert [] == ['A', 'B', 'middle.txt']`** — hier fliegt *keine* Ausnahme, weil `root~` scheitert und der `status != 0`-Ausstieg vorher greift |
+| `..._selection_including_the_root_commit_lists_its_files` | **RED** | **`AssertionError: assert [] == ['A', 'B', 'middle.txt']`** — no exception is raised here, because `root~` fails and the `status != 0` early return fires first |
 | `..._file_added_and_deleted_across_the_selection_stays_listed` | **RED** | `UnboundLocalError` |
 | `..._file_touched_twice_is_listed_once_with_summed_counts` | **RED** | `UnboundLocalError` |
-| `..._single_commit_selection_is_unchanged` | **grün** | Charakterisierung |
-| `..._unknown_revision_leaves_the_list_empty` | **grün** | Charakterisierung |
-| `..._stage_pseudo_commit_lists_the_staged_files` | **grün** | Charakterisierung |
-| `..._worktree_pseudo_commit_lists_the_modified_files` | **grün** | Charakterisierung |
+| `..._single_commit_selection_is_unchanged` | **green** | characterization |
+| `..._unknown_revision_leaves_the_list_empty` | **green** | characterization |
+| `..._stage_pseudo_commit_lists_the_staged_files` | **green** | characterization |
+| `..._worktree_pseudo_commit_lists_the_modified_files` | **green** | characterization |
 | `..._commit_with_stage_and_worktree_lists_all_of_them` | **RED** | `UnboundLocalError` |
 | `..._one_git_show_serves_the_whole_selection` | **RED** | `UnboundLocalError` |
 
-Der `UnboundLocalError` lautet unter Python ≥ 3.11:
+Under Python ≥ 3.11 the `UnboundLocalError` reads:
 
 ```
 UnboundLocalError: cannot access local variable 'oid' where it is not associated with a value
 ```
 
-und unter älteren Interpretern `local variable 'oid' referenced before assignment` (Falle **F8**).
-Er kommt aus `cola/widgets/filelist.py`, Zeile mit `if oid in (dag.STAGE, dag.WORKTREE):`.
+and under older interpreters `local variable 'oid' referenced before assignment` (trap **F8**). It
+comes from `cola/widgets/filelist.py`, the line reading `if oid in (dag.STAGE, dag.WORKTREE):`.
 
-> **Die vier grünen Tests sind Charakterisierungstests** — sie halten fest, was heute schon
-> stimmt und nach Task 2 weiter stimmen muss. Sie sind **kein kaputtes RED**. Sind einer der
-> sieben roten grün oder einer der vier grünen rot: **stoppen und melden.**
+> **The four green tests are characterization tests** — they pin down what is already true today
+> and must stay true after Task 2. They are **not a broken RED**. If any of the seven red ones is
+> green, or any of the four green ones is red: **stop and report.**
 
-### Schritt 2.2 (GREEN) — `commits_selected` ersetzen
+### Step 2.2 (GREEN) — Replace `commits_selected`
 
-**Anker:**
+**Anchor:**
 
 ```bash
 grep -n "    def commits_selected(self, commits):" cola/widgets/filelist.py
 ```
 
-**Erwartet:** genau **ein** Treffer. Ab dieser Zeile steht **wörtlich** der folgende Block —
-die vollständige Methode `commits_selected`. Lass ihn dir zur Kontrolle ausgeben:
+**Expected:** exactly **one** hit. Starting at that line, the following block stands **verbatim**
+in the file — the complete `commits_selected` method. Print it to check:
 
 ```bash
 sed -n '/^    def commits_selected(self, commits):$/,/^        self.list_files(numstat_rows, status_by_path=status_by_path)$/p' cola/widgets/filelist.py
 ```
 
-**Erwartet:** genau dieser Block, 83 Zeilen:
+**Expected:** exactly this block, 83 lines:
 
 ```python
     def commits_selected(self, commits):
@@ -771,9 +774,9 @@ sed -n '/^    def commits_selected(self, commits):$/,/^        self.list_files(n
         self.list_files(numstat_rows, status_by_path=status_by_path)
 ```
 
-Ersetze **genau diesen Block** — nichts davor, nichts danach; die Leerzeile darunter und die
-darauf folgende Zeile `    def list_files(self, files_log, status_by_path=None):` bleiben
-unangetastet — durch:
+Replace **exactly that block** — nothing before it, nothing after it; the blank line below it and
+the following line `    def list_files(self, files_log, status_by_path=None):` stay untouched —
+with:
 
 ```python
     def commits_selected(self, commits):
@@ -839,53 +842,47 @@ unangetastet — durch:
                 yield out, '\n'
 ```
 
-> **Was dabei verschwindet:** der ganze `if len(commits) > 1:`-Zweig samt seiner vier
-> `git.diff`-Varianten, der `status != 0`-Ausstieg und die Separator-Wahl über `oid`. Der
-> `UnboundLocalError` verschwindet nicht, weil `oid` gesetzt wird, sondern weil die Variable
-> nicht mehr existiert.
+> **What disappears with it:** the whole `if len(commits) > 1:` branch with its four `git.diff`
+> variants, the `status != 0` early return and the separator choice via `oid`. The
+> `UnboundLocalError` goes away not because `oid` gets assigned but because the variable no longer
+> exists.
 >
-> **Was bleibt:** der `NOTE`-Kommentar zu `diff-files`/`diff-index` — er begründet das `'\n'`
-> und gehört jetzt an diese Stelle.
+> **What stays:** the `NOTE` comment about `diff-files`/`diff-index` — it justifies the `'\n'` and
+> belongs at this spot now.
 >
-> **Keine Typannotationen** (Falle **F9**). Kein neuer Import: `dag` steht schon in Zeile 11.
+> **No type annotations** (trap **F9**). No new import: `dag` is already on line 11.
 
-### Verifikation
+### Verification
 
 ```bash
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p no:ruff -q test/widgets_history_filelist_test.py 2>&1 | tail -3
 ```
 
-**Erwartet:** alle passed.
+**Expected:** all passed.
 
 ```bash
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p no:ruff -q test/widgets_dag_history_test.py test/widgets_main_history_test.py test/diff_debounce_test.py 2>&1 | tail -3
 ```
 
-**Erwartet:** alle passed. Diese drei Dateien enthalten die Tests, die `commits_selected`
-mitbenutzen — insbesondere den Aufrufzähler aus Falle **F6**.
+**Expected:** all passed. These three files hold the tests that also use `commits_selected` — in
+particular the call counter from trap **F6**.
 
 ```bash
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p no:ruff -q cola test 2>&1 | tail -3
 ```
 
-**Erwartet:** Baseline + 21 passed, 0 failed.
+**Expected:** baseline + 21 passed, 0 failed.
 
-### Formatierung
+### Formatting
 
 ```bash
 garden fmt
 ```
 
-Ohne `garden` dasselbe von Hand (wörtlich das, was `garden fmt` tut — `garden.yaml:76-81`, ohne
-die beiden `--version`-Zeilen):
+Without `garden`, the substitutes from the table in §0.
 
-```bash
-cercis bin bin/git-* cola test extras/sphinxtogithub && isort --force-single-line-imports --py=39 --no-lines-before=STDLIB bin bin/git-* cola test extras/sphinxtogithub
-```
-
-> Der Code oben ist **von Hand auf 88 Zeichen gesetzt, aber nicht mit `cercis` geprüft** — das
-> Werkzeug war beim Schreiben des Plans nicht installiert. `garden fmt` darf ihn umbrechen; danach
-> die Tests noch einmal laufen lassen.
+> The code above is **hand-set to 88 columns but was not checked with `cercis`** — the tool was not
+> installed when the plan was written. `garden fmt` may rewrap it; run the tests again afterwards.
 
 ### Commit
 
@@ -906,28 +903,29 @@ because there is no commit before it."
 
 ---
 
-## Task 3 — Dokumentation
+## Task 3 — Documentation
 
-### Schritt 3.1 — `references/fork-history.md`
+### Step 3.1 — `references/fork-history.md`
 
-Anker:
+Anchor:
 
 ```bash
 grep -n "^## " .claude/skills/project-brief/references/fork-history.md
 ```
 
-Füge den neuen Abschnitt **hinter** den letzten nummerierten Abschnitt und **direkt vor** die
-Zeile `## Where the fork's tests live` ein.
+Insert the new section **after** the last numbered section and **directly before** the line
+`## Where the fork's tests live`.
 
-**Welche Nummer?** Genau eine der beiden folgenden Zeilen trifft zu — entscheide nach der Ausgabe
-des `grep` oben, ohne zu rechnen:
+**Which number?** Exactly one of the two rows below applies — decide from the `grep` output above,
+without doing arithmetic:
 
-| Letzter nummerierter Abschnitt in der Datei | Dann heißt der neue Abschnitt |
+| Last numbered section in the file | Then the new section is called |
 |---|---|
 | `## 5. Mouse actions and HEAD marking in the history` | `## 6. Multi-commit selection lists the union of the touched files` |
 | `## 6. Commit description above the file list` | `## 7. Multi-commit selection lists the union of the touched files` |
 
-Steht dort etwas anderes: **stoppen und melden.** Ersetze `<N>` unten durch die so bestimmte Zahl:
+If it says anything else: **stop and report.** Replace `<N>` below with the number decided that
+way:
 
 ```markdown
 ## <N>. Multi-commit selection lists the union of the touched files
@@ -958,26 +956,26 @@ anything.
   path that is binary in any one commit stays binary in the merged row.
 ```
 
-Ergänze außerdem in der Testliste am Dateiende:
+Also extend the test list at the end of that file:
 
 ```markdown
-- `test/widgets_history_filelist_test.py` enthält zusätzlich den Tabellentest für
-  `merge_numstat_rows()` und die Mehrfachauswahl-Tests gegen ein echtes Repository
-  (Fixture `history_repo`).
+- `test/widgets_history_filelist_test.py` additionally holds the table test for
+  `merge_numstat_rows()` and the multi-commit selection tests against a real repository
+  (fixture `history_repo`).
 ```
 
-### Schritt 3.2 — `references/gotchas.md`
+### Step 3.2 — `references/gotchas.md`
 
-Anker:
+Anchor:
 
 ```bash
 grep -n "^## Git output$" -A 2 .claude/skills/project-brief/references/gotchas.md
 grep -n "^## Icons$" .claude/skills/project-brief/references/gotchas.md
 ```
 
-**Erwartet:** je genau **ein** Treffer, und `## Icons` steht **hinter** `## Git output`. Füge den
-folgenden Text **ans Ende des Abschnitts `## Git output`** ein, also **direkt vor** die Zeile
-`## Icons` (mit einer Leerzeile davor und danach):
+**Expected:** exactly **one** hit each, and `## Icons` sits **after** `## Git output`. Insert the
+following text **at the end of the `## Git output` section**, that is **directly before** the
+`## Icons` line (with one blank line before and after):
 
 ```markdown
 **`git show` takes more than one revision.** `git show <a> <b> … --format= --numstat --raw
@@ -994,67 +992,72 @@ carry `-` instead of a count in both fields.
 (`test/widgets_dag_history_test.py`) monkeypatches `git.show` and asserts it ran exactly once.
 ```
 
-### Schritt 3.3 — den Hinweis im Beschreibungs-Panel-Plan nachziehen
+### Step 3.3 — Update the note in the description-panel plan
 
-`docs/plans/2026-08-01-commit-description-panel.md` führt den hier behobenen Fehler als Falle
-**F8** und sagt „Das wird separat behoben, nicht hier".
+`docs/plans/2026-08-01-commit-description-panel.md` lists the bug fixed here as trap **F8** and
+says it will be fixed separately.
 
-Prüfe zuerst den Status jenes Plans:
+Check that plan's status first:
 
 ```bash
 head -3 docs/plans/2026-08-01-commit-description-panel.md
 ```
 
-Steht dort `status: open`, ergänze in seiner F8-Zeile am Ende:
+If it says `status: open`, append to the end of its F8 row:
 
 ```markdown
 **Erledigt durch `docs/plans/2026-07-31-history-multi-commit-file-list.md`.** Die Integrationstests jenes Plans dürfen ab jetzt mehrere Commits auswählen; die Beschreibung zeigt weiterhin `selection[-1]`.
 ```
 
-Ist er bereits `status: completed`, **nichts ändern** — abgeschlossene Pläne sind Nachschlagewerk
-und werden nicht umgeschrieben (`docs/plans/README.md`).
+> That sentence is German on purpose: it is inserted into a German table row in a plan written
+> before the English rule, and a single English cell in a German table would read worse than the
+> rest. It is the **only** German text this plan writes. Everything else — code, comments,
+> docstrings, commit messages, documentation — is English.
 
-### Schritt 3.4 — `SKILL.md`
+If it is already `status: completed`, **change nothing** — completed plans are reference material
+and are not rewritten (`docs/plans/README.md`).
 
-Anker:
+### Step 3.4 — `SKILL.md`
+
+Anchor:
 
 ```bash
 grep -n "work packages have shipped" .claude/skills/project-brief/SKILL.md
 ```
 
-**Erwartet:** genau **ein** Treffer. Genau eine der beiden folgenden Zeilen steht dort — ersetze
-sie durch die danebenstehende, ohne zu rechnen:
+**Expected:** exactly **one** hit. Exactly one of the two lines below stands there — replace it
+with the one next to it, without doing arithmetic:
 
-| Steht dort | Ersetzen durch |
+| It says | Replace with |
 |---|---|
 | `Five work packages have shipped:` | `Six work packages have shipped:` |
 | `Six work packages have shipped:` | `Seven work packages have shipped:` |
 
-Steht dort etwas anderes: **stoppen und melden.**
+If it says anything else: **stop and report.**
 
-Ergänze außerdem den Aufzählungssatz, der über mehrere Zeilen geht, am Ende um
-„, and the multi-commit file list in the history" — direkt vor dem abschließenden Punkt.
+Also extend the enumerating sentence that runs over several lines, at its end, with
+", and the multi-commit file list in the history" — directly before the closing full stop.
 
-### Schritt 3.5 — Plan als erledigt markieren
+### Step 3.5 — Mark the plan as done
 
-Setze die Frontmatter dieses Plans auf `status: completed` und ergänze `completed_at`,
-`plan_commit`, `implementation_branch`, `implementation_head`, `ci_run` und
-`manual_verification` — wie in `docs/plans/README.md` beschrieben. Stelle die Zeile dieses Plans
-in der Tabelle von `docs/plans/README.md` von **offen** auf **abgeschlossen** um.
+Set this plan's frontmatter to `status: completed` and add `completed_at`, `plan_commit`,
+`implementation_branch`, `implementation_head`, `ci_run` and `manual_verification` — as described
+in `docs/plans/README.md`. Move this plan's row in the table of `docs/plans/README.md` from
+**open** to **completed**.
 
-### Verifikation
+### Verification
 
 ```bash
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p no:ruff -q cola test 2>&1 | tail -3
 ```
 
-**Erwartet:** unverändert grün.
+**Expected:** green, unchanged.
 
 ```bash
 garden check/fmt && garden check/pyupgrade && garden check/mypy
 ```
 
-Ohne `garden` dieselben Prüfungen einzeln:
+Without `garden`, the same checks one by one:
 
 ```bash
 cercis --check bin bin/git-* cola test extras/sphinxtogithub
@@ -1063,8 +1066,8 @@ pyupgrade --py39-plus bin/git-* bin/*.py cola/*.py cola/*/*.py
 python3 -m mypy --config-file pyproject.toml bin cola
 ```
 
-**Erwartet:** ohne Befund. Fehlt ein Werkzeug, ist das kein Abbruchgrund: **notieren, welche
-Prüfung nicht lief**, und es im Abschlussbericht so schreiben.
+**Expected:** no findings. A missing tool is not a reason to abort: **note which check did not
+run**, and say so in the final report.
 
 ### Commit
 
@@ -1074,32 +1077,32 @@ git add -A && git commit -m "docs: document the multi-commit file list"
 
 ---
 
-## Manuelle Abnahme
+## Manual acceptance
 
 ```bash
 garden run
 ```
 
-Ohne `garden` — oder in einer Umgebung ohne Anzeige — über den Launcher im Repository:
+Without `garden` — or in an environment without a display — through the launcher in the
+repository:
 
 ```bash
 env3/bin/python bin/git-fanta
 ```
 
-1. Zwei benachbarte Commits in der History markieren: die Dateiliste zeigt die Dateien **beider**,
-   je Datei eine Zeile. (Vorher: leeres Panel, Absturz im Log.)
-2. Zwei **nicht** benachbarte Commits mit Strg+Klick markieren: es erscheinen **nur** deren
-   Dateien, nichts aus den Commits dazwischen.
-3. Den **ältesten** Commit der History mitmarkieren: seine Dateien sind da. (Vorher: leer.)
-4. Eine Datei doppelklicken, die von mehreren markierten Commits berührt wird: das Diff-Fenster
-   öffnet sich wie gewohnt.
-5. Bei uncommitteten Änderungen `STAGE` und `WORKTREE` zusammen mit einem Commit markieren: alle
-   drei Quellen stehen in einer Liste.
-6. Dasselbe im eigenständigen DAG-Fenster (`Files`-Dock).
-7. Im Rebase-Sequenzeditor eine Zeile anklicken: unverändert, dort ist immer genau ein Commit
-   ausgewählt.
+1. Select two adjacent commits in the history: the file list shows the files of **both**, one row
+   per file. (Before: empty panel, a crash in the log.)
+2. Select two **non**-adjacent commits with Ctrl+click: **only** their files appear, nothing from
+   the commits in between.
+3. Include the **oldest** commit of the history in the selection: its files are there. (Before:
+   empty.)
+4. Double-click a file touched by several selected commits: the diff window opens as usual.
+5. With uncommitted changes present, select `STAGE` and `WORKTREE` together with a commit: all
+   three sources appear in one list.
+6. The same in the standalone DAG window (`Files` dock).
+7. Click a row in the rebase sequence editor: unchanged, exactly one commit is selected there.
 
-> **In einer Umgebung ohne Anzeige entfällt dieser Abschnitt.** Dann gilt: die Punkte 1, 2, 3 und
-> 5 sind durch die Tests aus Task 2 abgedeckt; **4, 6 und 7 sind es nicht** — der Doppelklick über
-> eine Mehrfachauswahl, das DAG-Fenster und der Sequenzeditor haben für diesen Fall keine
-> Testabdeckung. **Im Abschlussbericht so schreiben, nicht als „geprüft" ausgeben.**
+> **In an environment without a display this section does not apply.** Then: points 1, 2, 3 and 5
+> are covered by the tests from Task 2; **4, 6 and 7 are not** — a double-click over a multi-commit
+> selection, the DAG window and the sequence editor have no test coverage for this case. **Write it
+> that way in the final report, do not present it as "checked".**

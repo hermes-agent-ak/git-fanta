@@ -111,10 +111,14 @@ reinventing these is the most common wasted work in this repo.
 
 ## Workflow
 
-- **Plans live in `docs/plans/YYYY-MM-DD-topic.md`**, written in German, task-structured with
-  TDD RED/GREEN steps and explicit verification commands. Completed plans get a YAML frontmatter
-  block (`status`, `completed_at`, `plan_commit`, `implementation_branch`, `implementation_head`,
-  `ci_run`, `manual_verification`) and stay in place as design records.
+- **Everything written here is English** — plans, docs, commit messages, code comments, and test
+  docstrings alike. The conversation with the user is often German; the artifacts are not. Plans
+  and code comments written before 2026-07-31 are still German in places; correct them when you
+  touch them, never match them.
+- **Plans live in `docs/plans/YYYY-MM-DD-topic.md`**, task-structured with TDD RED/GREEN steps
+  and explicit verification commands. Completed plans get a YAML frontmatter block (`status`,
+  `completed_at`, `plan_commit`, `implementation_branch`, `implementation_head`, `ci_run`,
+  `manual_verification`) and stay in place as design records.
 - **Review a plan before executing it** with the personal `plan-review` skill. Plans in this repo
   have historically shipped with wrong line references and non-terminating test helpers.
 - **Branches**: `tree-ui/<agent>/<model>/<topic>` for feature work (e.g.

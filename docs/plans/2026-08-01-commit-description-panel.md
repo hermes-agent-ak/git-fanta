@@ -1472,7 +1472,8 @@ list".
 Setze die Frontmatter dieses Plans auf `status: completed` und ergänze `completed_at`,
 `plan_commit`, `implementation_branch`, `implementation_head`, `ci_run` und
 `manual_verification` — wie in `docs/plans/README.md` beschrieben. Stelle die Zeile dieses Plans
-in der Tabelle von `docs/plans/README.md` von **offen** auf **abgeschlossen** um.
+in der Tabelle von `docs/plans/README.md` von **open** auf **completed** um. (Der Index ist seit
+2026-07-31 auf Englisch; die Statuswörter in der Tabelle heißen jetzt so.)
 
 ### Verifikation
 

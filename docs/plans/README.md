@@ -1,38 +1,42 @@
-# Implementierungspläne
+# Implementation plans
 
-Ein Plan pro Arbeitspaket, benannt `YYYY-MM-DD-thema.md`. Jeder Plan trägt einen
-YAML-Frontmatter-Block mit `status`. **Diese Datei ist der Index — hier steht, was offen ist.**
+One plan per work package, named `YYYY-MM-DD-topic.md`. Every plan carries a YAML frontmatter
+block with `status`. **This file is the index — it records what is still open.**
 
-Ein Plan ohne `status: open` ist **erledigt und darf nicht mehr ausgeführt werden.** Abgeschlossene
-Pläne bleiben liegen, weil sie die Entwurfsentscheidungen festhalten, die spätere Änderungen nicht
-rückgängig machen dürfen. Sie sind Nachschlagewerk, keine Aufgabenliste.
+Plans, like everything else written in this repository, are **in English**. The conversation that
+produces them is often German; the documents are not. Plans written before 2026-07-31 are still
+German — they are corrected when touched, not rewritten wholesale.
 
-| Plan | Status | Umgesetzt in |
+A plan without `status: open` is **done and must not be executed again.** Completed plans stay in
+place because they record the design decisions that later changes must not undo. They are
+reference material, not a task list.
+
+| Plan | Status | Implemented in |
 |---|---|---|
-| [2026-07-28-git-fanta-ui-history-graph.md](2026-07-28-git-fanta-ui-history-graph.md) | abgeschlossen | `ag-tree-ui-01` → `c98b4aef` |
-| [2026-07-29-history-commit-files.md](2026-07-29-history-commit-files.md) | abgeschlossen | `dev` → `86b9863d` |
-| [2026-07-30-rename-to-git-fanta.md](2026-07-30-rename-to-git-fanta.md) | abgeschlossen | `renaming/opus5/minimax-M3` → `3083c9dd` |
-| [2026-07-31-commit-file-diff-window.md](2026-07-31-commit-file-diff-window.md) | abgeschlossen | `tree-ui/diff-view/minimax-M3` → `c73ec4a2` |
-| [2026-07-31-history-mouse-actions.md](2026-07-31-history-mouse-actions.md) | abgeschlossen | `tree-ui/mouse-actions/minimax-M3` → `e76b478a` |
-| [2026-07-31-history-multi-commit-file-list.md](2026-07-31-history-multi-commit-file-list.md) | **offen** | — |
-| [2026-08-01-commit-description-panel.md](2026-08-01-commit-description-panel.md) | **offen** | — |
+| [2026-07-28-git-fanta-ui-history-graph.md](2026-07-28-git-fanta-ui-history-graph.md) | completed | `ag-tree-ui-01` → `c98b4aef` |
+| [2026-07-29-history-commit-files.md](2026-07-29-history-commit-files.md) | completed | `dev` → `86b9863d` |
+| [2026-07-30-rename-to-git-fanta.md](2026-07-30-rename-to-git-fanta.md) | completed | `renaming/opus5/minimax-M3` → `3083c9dd` |
+| [2026-07-31-commit-file-diff-window.md](2026-07-31-commit-file-diff-window.md) | completed | `tree-ui/diff-view/minimax-M3` → `c73ec4a2` |
+| [2026-07-31-history-mouse-actions.md](2026-07-31-history-mouse-actions.md) | completed | `tree-ui/mouse-actions/minimax-M3` → `e76b478a` |
+| [2026-07-31-history-multi-commit-file-list.md](2026-07-31-history-multi-commit-file-list.md) | **open** | — |
+| [2026-08-01-commit-description-panel.md](2026-08-01-commit-description-panel.md) | **open** | — |
 
-## Wenn ein Plan fertig ist
+## When a plan is finished
 
-Frontmatter ergänzen und die Zeile in dieser Tabelle umstellen:
+Add the frontmatter and move the row in the table above from **open** to **completed**:
 
 ```yaml
 ---
 status: completed
 completed_at: YYYY-MM-DD
-plan_commit: <kurzer Hash des Commits, der den Plan hinzufügte>
+plan_commit: <short hash of the commit that added the plan>
 implementation_branch: <branch>
-implementation_head: <kurzer Hash des letzten Umsetzungs-Commits>
-ci_run: <URL oder "nicht ausgefuehrt (lokal gruen)">
+implementation_head: <short hash of the last implementation commit>
+ci_run: <URL or "not run (green locally)">
 manual_verification: |
-  - was tatsächlich von Hand geprüft wurde
+  - what was actually checked by hand
 ---
 ```
 
-`manual_verification` listet nur, was wirklich angesehen wurde. Was nur durch Tests abgedeckt ist,
-gehört dort nicht hinein.
+`manual_verification` lists only what was really looked at. Anything covered by tests alone does
+not belong there.
