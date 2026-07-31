@@ -15,6 +15,7 @@ rückgängig machen dürfen. Sie sind Nachschlagewerk, keine Aufgabenliste.
 | [2026-07-31-commit-file-diff-window.md](2026-07-31-commit-file-diff-window.md) | abgeschlossen | `tree-ui/diff-view/minimax-M3` → `c73ec4a2` |
 | [2026-07-31-history-mouse-actions.md](2026-07-31-history-mouse-actions.md) | abgeschlossen | `tree-ui/mouse-actions/minimax-M3` → `e76b478a` |
 | [2026-08-01-commit-description-panel.md](2026-08-01-commit-description-panel.md) | abgeschlossen | `tree-ui/description-panel/minimax-M3` → `16bd7e3a` |
+| [2026-07-31-history-multi-commit-file-list.md](2026-07-31-history-multi-commit-file-list.md) | abgeschlossen | `tree-ui/multi-select/minimax-M3` → `c8cca254` |
 
 ## Wenn ein Plan fertig ist
 

@@ -112,6 +112,20 @@ this backwards produces test data that looks plausible and asserts nothing.
 `--raw`, `no_renames=True` → `--no-renames`, `foo=False` is dropped, `foo='bar'` → `--foo=bar`.
 Single-character keys get one dash. `_readonly=True` is a wrapper hint, not a git flag.
 
+
+**`git show` takes more than one revision.** `git show <a> <b> … --format= --numstat --raw
+--no-renames -z` emits one raw+numstat block per revision, in the order given, in exactly the
+shape `parse_status_and_numstat` already parses. It is the cheapest way to describe a whole
+selection, and it works for a root commit — unlike `<root>~`, which does not resolve.
+
+**`--numstat -z` does not NUL-separate the numstat fields.** Despite "use NULs as output field
+terminators", the row stays `adds<TAB>dels<TAB>path`; only the record ends with NUL. Binary files
+carry `-` instead of a count in both fields.
+
+**`FileWidget.commits_selected` must not grow a git call per commit.**
+`test_public_selection_reaches_all_standalone_consumers_synchronously`
+(`test/widgets_dag_history_test.py`) monkeypatches `git.show` and asserts it ran exactly once.
+
 ## Icons
 
 **`cola/icons.py` is the only file that names icon assets** — that is stated in its module

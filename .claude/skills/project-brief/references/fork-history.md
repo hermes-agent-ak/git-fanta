@@ -201,6 +201,33 @@ its changed files below. File names the message mentions are marked inside the t
 - **`MonoTextEdit` starts with `NoWrap`**; `set_word_wrapping(True)` in the constructor is what
   makes the description readable.
 
+## 7. Multi-commit selection lists the union of the touched files
+
+Plan: `docs/plans/2026-07-31-history-multi-commit-file-list.md`.
+
+Selecting several commits shows **every file those commits touch**, one row per file, with the
+added and deleted lines summed. Before this, the multi-commit branch tried to diff the *range*
+from the oldest to the newest selection and crashed with `UnboundLocalError` before showing
+anything.
+
+**Decisions that later work must not undo:**
+
+- **Union, not range.** A range lists files from commits *between* two non-adjacent selections,
+  hides changes that cancel out inside it, and shows nothing whenever the root commit is selected
+  (`<root>~` does not resolve). All three measured.
+- **One `git show` for the whole selection.** `git show` accepts several revisions and emits one
+  raw+numstat block per revision, in the order given, in the same NUL-separated shape it uses for
+  a single one. `parse_status_and_numstat` needed no change at all. One call also keeps
+  `test_public_selection_reaches_all_standalone_consumers_synchronously` (which asserts exactly
+  one `git.show` call) valid.
+- **STAGE and WORKTREE are not revisions.** They keep their own `git diff-index` / `git
+  diff-files` calls and their own newline separator. A selection therefore costs at most three
+  git calls, no matter how many commits it holds.
+- **Order is first appearance, not alphabetical.** That makes the single-commit case byte-for-byte
+  what it was before: git's own order.
+- **Binary files keep `-`.** `merge_numstat_rows()` refuses to invent a number for them, and a
+  path that is binary in any one commit stays binary in the merged row.
+
 ## Where the fork's tests live
 
 - `test/widgets_dag_history_test.py` — `CommitHistoryWidget`, `GitDAG`, state round-trips,
@@ -223,5 +250,8 @@ its changed files below. File names the message mentions are marked inside the t
   rename. If you remove a fallback, these are the tests that are supposed to stop you.
 - `test/widgets_dag_history_test.py` enthält zusätzlich die Tabellentests für
   `commit_message_file_spans()` und die Format-Tests des Beschreibungsfelds.
+- `test/widgets_history_filelist_test.py` additionally holds the table test for
+  `merge_numstat_rows()` and the multi-commit selection tests against a real repository
+  (fixture `history_repo`).
 - `test/widgets_history_checkout_test.py` — die Checkout-Regel des Doppelklicks: Branch-Spitze,
   Mehrdeutigkeit, aktueller Branch, abgelöster HEAD, Pseudo-Commits.

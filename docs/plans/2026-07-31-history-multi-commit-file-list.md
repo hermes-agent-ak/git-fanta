@@ -1,5 +1,12 @@
 ---
-status: open
+status: completed
+completed_at: 2026-07-31
+plan_commit: cdb9cfde
+implementation_branch: tree-ui/multi-select/minimax-M3
+implementation_head: c8cca254
+ci_run: nicht ausgefuehrt (lokal gruen - garden check/fmt lokal gruen; check/pyupgrade und check/mypy sind in der Umgebung nicht verfuegbar gewesen)
+manual_verification: |
+  - In einer Headless-Umgebung nicht moeglich. Punkte 4 (Diff-Doppelklick ueber Multi-Commit), 6 (DAG-Fenster) und 7 (Rebase-Editor) haben hier keine Test-Abdeckung. Punkte 1, 2, 3 und 5 sind durch die Tests aus Task 2 abgedeckt.
 ---
 
 # Multi-commit selection in the history: every file the selection touches
