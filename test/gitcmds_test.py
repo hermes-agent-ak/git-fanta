@@ -1,6 +1,8 @@
 """Test the cola.gitcmds module"""
 import os
 
+import pytest
+
 from cola import core
 from cola import gitcmds
 
@@ -247,3 +249,59 @@ def test_diff_patch_with_stat(app_context):
     assert gitcmds.diff_patch_with_stat(app_context, ['A'], head=False) == ''
     actual = gitcmds.diff_patch_with_stat(app_context, ['A'], head=True)
     assert '+A change' in actual
+
+
+def _commit_file(context, path, content, date):
+    """Commit `content` into `path` at a fixed date and return the oid.
+
+    The dates matter: "git rev-list --no-walk" orders by commit time, and
+    same-second commits would make the ordering assertions meaningless.
+    """
+    helper.write_file(path, content)
+    env = {'GIT_AUTHOR_DATE': date, 'GIT_COMMITTER_DATE': date}
+    context.git.add(path)
+    context.git.commit('-m', f'touch {path}', _add_env=env)
+    _status, out, _err = context.git.rev_parse('HEAD')
+    return out.strip()
+
+
+def test_commit_touching_path_returns_the_newest_toucher(app_context):
+    """Of the given commits, the newest one that changed the path wins."""
+    first = _commit_file(app_context, 'a.txt', 'one\n', '2026-01-01T10:00:00')
+    middle = _commit_file(app_context, 'b.txt', 'two\n', '2026-01-02T10:00:00')
+    last = _commit_file(app_context, 'a.txt', 'three\n', '2026-01-03T10:00:00')
+
+    result = gitcmds.commit_touching_path(app_context, [first, middle, last], 'a.txt')
+
+    assert result == last
+
+
+def test_commit_touching_path_ignores_commits_outside_the_list(app_context):
+    """A commit that is not in the list never wins, even if it is newer."""
+    first = _commit_file(app_context, 'a.txt', 'one\n', '2026-01-01T10:00:00')
+    middle = _commit_file(app_context, 'b.txt', 'two\n', '2026-01-02T10:00:00')
+    _commit_file(app_context, 'a.txt', 'three\n', '2026-01-03T10:00:00')
+
+    result = gitcmds.commit_touching_path(app_context, [first, middle], 'a.txt')
+
+    assert result == first
+
+
+def test_commit_touching_path_handles_the_root_commit(app_context):
+    """The root commit has no parent and is still a valid answer."""
+    root = _commit_file(app_context, 'a.txt', 'one\n', '2026-01-01T10:00:00')
+
+    assert gitcmds.commit_touching_path(app_context, [root], 'a.txt') == root
+
+
+def test_commit_touching_path_returns_none_when_nothing_touched_it(app_context):
+    """git exits 0 with empty output; absence is not an error (trap F2)."""
+    first = _commit_file(app_context, 'a.txt', 'one\n', '2026-01-01T10:00:00')
+
+    assert gitcmds.commit_touching_path(app_context, [first], 'b.txt') is None
+
+
+@pytest.mark.parametrize(('oids', 'path'), (([], 'a.txt'), (['a' * 40], '')))
+def test_commit_touching_path_without_usable_input(app_context, oids, path):
+    """No commits or no path means no lookup and no git call."""
+    assert gitcmds.commit_touching_path(app_context, oids, path) is None

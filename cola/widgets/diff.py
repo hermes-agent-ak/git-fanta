@@ -25,6 +25,7 @@ from .. import utils
 from ..editpatch import edit_patch
 from ..i18n import N_
 from ..interaction import Interaction
+from ..models import dag
 from ..models import main
 from ..models import prefs
 from ..qtutils import get
@@ -2293,11 +2294,17 @@ class CommitFileDiffWindow(standard.Widget):
         self.init_state(context.settings, self.resize, 720, 480)
 
     def set_commit_file(self, commits, filename):
-        """Zeigt `filename` so, wie `commits` ihn veraendert haben"""
+        """Show `filename` as the selected commits changed it.
+
+        With several commits selected the list shows the union of the files they
+        touch, so the newest commit is not necessarily one that changed this
+        file. Ask git which of them did and diff that one; a range would render
+        empty whenever the change cancels out inside it.
+        """
         if not commits or not filename:
             return
+        commit = self._commit_for_file(commits, filename)
         diffwidget = self.diffwidget
-        commit = commits[-1]
         diffwidget.set_details(
             commit.oid,
             commit.author or '',
@@ -2306,17 +2313,34 @@ class CommitFileDiffWindow(standard.Widget):
             commit.summary or '',
         )
         diffwidget.oid = commit.oid
-        if len(commits) > 1:
-            diffwidget.oid_start = commits[0]
-            diffwidget.oid_end = commits[-1]
-        else:
-            diffwidget.oid_start = None
-            diffwidget.oid_end = None
-        diffwidget.files_selected([filename])
+        diffwidget.oid_start = None
+        diffwidget.oid_end = None
+        diffwidget.set_diff_oid(commit.oid, filename=filename)
         self.setWindowTitle(
             N_('%(filename)s - %(oid)s')
             % {'filename': filename, 'oid': commit.oid[:12]}
         )
+
+    def _commit_for_file(self, commits, filename):
+        """Return the newest of `commits` that changed `filename`.
+
+        Falls back to the newest selected commit when git has no answer, which
+        is what happens for a path that only exists in the STAGE or WORKTREE
+        pseudo-commits.
+        """
+        if len(commits) == 1:
+            return commits[0]
+        oids = [
+            commit.oid
+            for commit in commits
+            if commit.oid not in (dag.STAGE, dag.WORKTREE)
+        ]
+        touching = gitcmds.commit_touching_path(self.context, oids, filename)
+        if touching:
+            for commit in commits:
+                if commit.oid == touching:
+                    return commit
+        return commits[-1]
 
 
 class ApplyPatches(standard.Dialog):

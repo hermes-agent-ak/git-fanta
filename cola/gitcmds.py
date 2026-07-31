@@ -974,7 +974,26 @@ def log_helper(
     return (revs, summaries)
 
 
-def rev_list_range(context: ApplicationContext, start, end) -> list[tuple[str, str]]:
+def commit_touching_path(context, oids, path):
+    """Return the newest of `oids` that changed `path`, or None.
+
+    "git rev-list --no-walk" looks at exactly the commits it is given and does
+    not walk their ancestors, so a commit that is not in `oids` can never be the
+    answer. Its default ordering is by commit date, newest first, which is why
+    --max-count=1 yields the newest toucher rather than an arbitrary one.
+
+    Returns None when no listed commit changed the path. git reports that as
+    exit status 0 with empty output, so it is not an error.
+    """
+    if not oids or not path:
+        return None
+    status, out, _ = context.git.rev_list(
+        *oids, '--', path, max_count=1, no_walk=True, _readonly=True
+    )
+    if status != 0:
+        return None
+    return out.strip() or None
+
     """Return (oid, summary) pairs between start and end."""
     revrange = f'{start}..{end}'
     out = context.git.rev_list(revrange, pretty='oneline', _readonly=True)[STDOUT]
