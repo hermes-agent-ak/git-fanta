@@ -1,3 +1,16 @@
+---
+status: completed
+completed_at: 2026-07-30
+plan_commit: 27e32228
+implementation_branch: dev
+implementation_head: 86b9863d
+ci_run: nicht ausgefuehrt (lokal gruen)
+manual_verification: |
+  - Dateiliste erscheint rechts neben der Commit-Tabelle
+  - Status-Symbole und +/- Spalten stimmen mit git show ueberein
+  - View-Menue blendet das Panel ein und aus
+---
+
 # Commit-Dateiliste im History-Panel – Implementierungsplan
 
 > **Für Hermes:** Verwende den `plan`-Skill und führe die Tasks mit TDD + unabhängigem Doppel-Review pro Task aus.

@@ -1,3 +1,18 @@
+---
+status: completed
+completed_at: 2026-07-31
+plan_commit: 7adcef22
+implementation_branch: tree-ui/mouse-actions/minimax-M3
+implementation_head: e76b478a
+ci_run: nicht ausgefuehrt (lokal gruen)
+manual_verification: |
+  - Doppelklick auf eine fremde Branch-Spitze wechselt dorthin
+  - Doppelklick auf die aktuelle Spitze tut nichts
+  - Rueckfrage vor dem Ablosen von HEAD, Abbruch laesst alles stehen
+  - HEAD-Chip im abgeloesten Zustand, Stern am aktuellen Branch
+  - Padding an History-Ueberschrift und --all-Zeile
+---
+
 # Maus-Aktionen und HEAD-Markierung in der History-Ansicht
 
 **Erstellt:** 2026-07-31
