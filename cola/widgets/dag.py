@@ -319,7 +319,9 @@ class ViewerMixin:
         means by "take me to that branch", so it is checked out by name. Several
         branches at the same commit are ambiguous and go through the existing
         Checkout Branch dialog. Anything else would detach HEAD, which is a state
-        the user has to opt into.
+        the user has to opt into. A commit that only carries a remote branch
+        becomes a new local branch tracking it -- that is what the user means
+        by double-clicking a branch they do not have yet.
         """
         if commit is None or commit.oid in (dag.STAGE, dag.WORKTREE):
             return
@@ -332,6 +334,24 @@ class ViewerMixin:
             return
         if branches:
             guicmds.checkout_branch(context, default=branches[0])
+            return
+        remote_branches = [
+            tag[len(_REMOTES_PREFIX) :]
+            for tag in commit.tags
+            if tag.startswith(_REMOTES_PREFIX)
+        ]
+        if len(remote_branches) == 1:
+            # "git checkout <name>" would do this too, but only when
+            # checkout.guess is on, and it silently checks out an unrelated
+            # local branch of the same name when one exists. Be explicit.
+            tracking = remote_branches[0]
+            local_name = tracking.split('/', 1)[1]
+            cmds.do(
+                cmds.Checkout,
+                context,
+                ['-b', local_name, '--track', tracking],
+                checkout_branch=True,
+            )
             return
         if 'HEAD' in commit.tags:
             return

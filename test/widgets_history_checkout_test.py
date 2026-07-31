@@ -6,9 +6,11 @@ import sys
 
 import pytest
 
+from cola import cmds
 from cola import guicmds
 from cola.interaction import Interaction
 from cola.models import dag
+from cola.widgets import dag as dagwidget
 from cola.widgets.dag import CommitTreeWidget
 from cola.widgets.dag import CommitTreeWidgetItem
 from qtpy import QtCore
@@ -311,3 +313,78 @@ def test_double_click_on_a_row_without_a_commit_is_ignored(
     qapp.processEvents()
 
     assert confirmed == []
+
+
+def test_remote_only_commit_creates_a_tracking_branch(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """A commit that only exists on a remote becomes a local branch."""
+    commit = _fake_commit('a' * 40, tags=['remotes/origin/feature'])
+    tree = _tree(app_context, managed_qobject)
+    recorded = []
+    monkeypatch.setattr(
+        cmds,
+        'do',
+        lambda cls, context, *args, **kwargs: recorded.append((cls, args, kwargs)),
+    )
+
+    tree.checkout_commit(commit)
+
+    assert recorded == [(
+        cmds.Checkout,
+        (['-b', 'feature', '--track', 'origin/feature'],),
+        {'checkout_branch': True},
+    )]
+
+
+def test_remote_only_commit_keeps_a_slashed_branch_name(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """Only the remote name is stripped, not the rest of the branch name."""
+    commit = _fake_commit('a' * 40, tags=['remotes/origin/feat/nested'])
+    tree = _tree(app_context, managed_qobject)
+    recorded = []
+    monkeypatch.setattr(
+        cmds, 'do', lambda cls, context, *args, **kwargs: recorded.append(args)
+    )
+
+    tree.checkout_commit(commit)
+
+    assert recorded == [(['-b', 'feat/nested', '--track', 'origin/feat/nested'],)]
+
+
+def test_several_remote_branches_do_not_guess(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """Two remotes carrying the same commit is ambiguous - do not pick one."""
+    commit = _fake_commit(
+        'a' * 40, tags=['remotes/origin/feature', 'remotes/fork/feature']
+    )
+    tree = _tree(app_context, managed_qobject)
+    recorded = []
+    monkeypatch.setattr(
+        cmds, 'do', lambda cls, context, *args, **kwargs: recorded.append(cls)
+    )
+    monkeypatch.setattr(dagwidget, '_confirm_detached_checkout', lambda *a: False)
+
+    tree.checkout_commit(commit)
+
+    assert recorded == []
+
+
+def test_a_local_branch_still_wins_over_a_remote_one(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """Characterization: an existing local branch is checked out by name."""
+    commit = _fake_commit(
+        'a' * 40, branches=['feature'], tags=['remotes/origin/feature']
+    )
+    tree = _tree(app_context, managed_qobject)
+    recorded = []
+    monkeypatch.setattr(
+        cmds, 'do', lambda cls, context, *args, **kwargs: recorded.append((cls, args))
+    )
+
+    tree.checkout_commit(commit)
+
+    assert recorded == [(cmds.CheckoutBranch, ('feature',))]
