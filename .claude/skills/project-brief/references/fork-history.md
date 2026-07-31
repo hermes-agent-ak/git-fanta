@@ -172,6 +172,35 @@ the main window *and* in the DAG window's commit list.
   two states apart — both read `['HEAD', 'heads/main']` on a branch tip.
 - **`create_dock(..., title_indent=...)` defaults to 0**, so only the History dock is indented.
 
+## 6. Commit description above the file list
+
+Plan: `docs/plans/2026-08-01-commit-description-panel.md`.
+
+The history's right-hand panel is a **vertical splitter**: the selected commit's message on top,
+its changed files below. File names the message mentions are marked inside the text.
+
+**Decisions that later work must not undo:**
+
+- **The message is fetched per selection, not stored on `Commit`.** `LOGFMT`
+  (`cola/models/dag.py:15`) stays subject-only: it is line-based, so a multi-line `%b` would break
+  parsing for all 1000 commits and multiply their memory cost.
+- **No second debounce.** The description rides the file panel's existing
+  `_schedule_files` / `_files_timer` / `_load_pending_files` chain and its visibility guard.
+- **The guards still ask `filewidget.isVisible()`** even though `display_files` now hides
+  `details_splitter`. Hiding a parent splitter hides its children - measured, and the reason no
+  guard had to change.
+- **"Fuzzy" means path suffixes, not edit distance.** `commit_message_file_spans()` matches a path
+  at every `/` boundary suffix, case-insensitively, never cutting into a surrounding token, longest
+  candidate first. A basename *without* its extension is deliberately not a candidate - otherwise
+  `main.py` would light up on the word "main".
+- **The marking reuses `inline_graph_style()`**, so the file chips in the message look like the
+  branch chips in the graph and inherit their contrast guarantee. That is also why the widget lives
+  in `cola/widgets/dag.py`: `filelist.py` cannot import `dag.py` back.
+- **The panel's text is exactly `%B`.** No author/date header - the columns already show that, and
+  an exact text keeps the highlight offsets correct without translation.
+- **`MonoTextEdit` starts with `NoWrap`**; `set_word_wrapping(True)` in the constructor is what
+  makes the description readable.
+
 ## Where the fork's tests live
 
 - `test/widgets_dag_history_test.py` — `CommitHistoryWidget`, `GitDAG`, state round-trips,
@@ -192,5 +221,7 @@ the main window *and* in the DAG window's commit list.
 - `test/env_rename_test.py`, `test/config_home_migration_test.py`,
   `test/prepare_commit_msg_hook_test.py` — one file per backwards fallback introduced by the
   rename. If you remove a fallback, these are the tests that are supposed to stop you.
+- `test/widgets_dag_history_test.py` enthält zusätzlich die Tabellentests für
+  `commit_message_file_spans()` und die Format-Tests des Beschreibungsfelds.
 - `test/widgets_history_checkout_test.py` — die Checkout-Regel des Doppelklicks: Branch-Spitze,
   Mehrdeutigkeit, aktueller Branch, abgelöster HEAD, Pseudo-Commits.

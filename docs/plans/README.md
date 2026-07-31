@@ -14,7 +14,7 @@ rückgängig machen dürfen. Sie sind Nachschlagewerk, keine Aufgabenliste.
 | [2026-07-30-rename-to-git-fanta.md](2026-07-30-rename-to-git-fanta.md) | abgeschlossen | `renaming/opus5/minimax-M3` → `3083c9dd` |
 | [2026-07-31-commit-file-diff-window.md](2026-07-31-commit-file-diff-window.md) | abgeschlossen | `tree-ui/diff-view/minimax-M3` → `c73ec4a2` |
 | [2026-07-31-history-mouse-actions.md](2026-07-31-history-mouse-actions.md) | abgeschlossen | `tree-ui/mouse-actions/minimax-M3` → `e76b478a` |
-| [2026-08-01-commit-description-panel.md](2026-08-01-commit-description-panel.md) | **offen** | — |
+| [2026-08-01-commit-description-panel.md](2026-08-01-commit-description-panel.md) | abgeschlossen | `tree-ui/description-panel/minimax-M3` → `16bd7e3a` |
 
 ## Wenn ein Plan fertig ist
 
