@@ -1,4 +1,4 @@
-"""Main UI for authoring commits and other Git Cola interactions"""
+"""Main UI for authoring commits and other Git Fanta interactions"""
 import os
 from functools import partial
 
@@ -38,6 +38,7 @@ from . import compare
 from . import createbranch
 from . import createtag
 from . import dag
+from . import defs
 from . import diff
 from . import editremotes
 from . import finder
@@ -62,6 +63,14 @@ _MAIN_HISTORY_UNSUPPORTED_ACTIONS = (
     'search_line_range',
 )
 
+_MAIN_HISTORY_UNSUPPORTED_FILE_ACTIONS = (
+    'show_history_action',
+    'launch_difftool_action',
+    'grab_file_action',
+    'grab_file_from_parent_action',
+    'select_line_range_action',
+)
+
 
 class MainView(standard.MainWindow):
     config_actions_changed = Signal(object)
@@ -82,7 +91,7 @@ class MainView(standard.MainWindow):
 
         create_dock = qtutils.create_dock
         cfg = context.cfg
-        self.browser_dockable = cfg.get('cola.browserdockable')
+        self.browser_dockable = cfg.get('fanta.browserdockable')
         if self.browser_dockable:
             browser = browse.worktree_browser(
                 context, parent=self, show=False, update=False
@@ -112,12 +121,14 @@ class MainView(standard.MainWindow):
             'History',
             N_('History'),
             self,
+            title_indent=defs.margin,
             func=lambda dock: dag.CommitHistoryWidget(
                 context,
                 ref='--all',
                 count=1000,
                 display_status=False,
                 display_inline_graph=True,
+                display_files=True,
                 parent=dock,
             ),
         )
@@ -128,6 +139,15 @@ class MainView(standard.MainWindow):
             menu_action = history_tree.menu_actions[action_name]
             menu_action.setVisible(False)
             menu_action.setShortcut(QtGui.QKeySequence())
+        for action_name in _MAIN_HISTORY_UNSUPPORTED_FILE_ACTIONS:
+            file_action = getattr(self.historywidget.filewidget, action_name)
+            file_action.setVisible(False)
+            file_action.setShortcut(QtGui.QKeySequence())
+        # Ein wiederverwendetes Fenster fuer den Diff einer doppelgeklickten Datei.
+        self.commit_file_diff_window = None
+        self.historywidget.filewidget.file_diff_requested.connect(
+            self._show_commit_file_diff, type=Qt.QueuedConnection
+        )
         self.model.updated.disconnect(self.historywidget.model_updated)
 
         # "Switch Repository" widgets
@@ -992,7 +1012,7 @@ class MainView(standard.MainWindow):
         if git_version:
             ok = True
             Interaction.log(
-                git_version + '\n' + N_('git cola version %s') % version.version()
+                git_version + '\n' + N_('git fanta version %s') % version.version()
             )
         else:
             ok = False
@@ -1027,11 +1047,23 @@ class MainView(standard.MainWindow):
         self.model.save_commitmsg(msg=commit_msg)
         for browser in list(self.context.browser_windows):
             browser.close()
+        if self.commit_file_diff_window is not None:
+            self.commit_file_diff_window.close()
         self.historywidget.close_popup()
         self.historywidget.stop_and_wait()
         standard.MainWindow.closeEvent(self, event)
         if self.dag is not None and self.dag.isVisible():
             self.context.reset_view(self.dag)
+
+    def _show_commit_file_diff(self, commits, filename):
+        """Zeigt den Diff der doppelgeklickten Datei in einem eigenen Fenster"""
+        self.commit_file_diff_window = diff.show_commit_file_diff(
+            self.context,
+            self,
+            commits,
+            filename,
+            window=self.commit_file_diff_window,
+        )
 
     def create_view_menu(self):
         menu = qtutils.create_menu(N_('View'), self)
@@ -1048,6 +1080,7 @@ class MainView(standard.MainWindow):
         menu.addAction(self.browse_action)
         menu.addAction(self.dag_action)
         menu.addAction(self.historywidget.display_inline_graph_action)
+        menu.addAction(self.historywidget.display_files_action)
         menu.addSeparator()
 
         popup_menu = self.createPopupMenu()

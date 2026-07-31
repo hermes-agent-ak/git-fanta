@@ -48,6 +48,49 @@ before delivering the parent's show event. Both verified offscreen under PyQt5.
 or hint values depending on the binding. Never assert against fixed pixel numbers; compare
 against the live value, or spy on `setSizes`.
 
+**`CommitDiffWidget.commits_selected()` arms a 100 ms debounce that fires later and wins.**
+Calling it and then `files_selected(['path'])` shows the single-file diff — until the timer fires
+and reloads the whole-commit diff over it (measured: `filename=None`, two git calls). To show one
+file's diff, set `oid` / `oid_start` / `oid_end` directly and call `files_selected()` once, the
+way `CommitFileDiffWindow.set_commit_file()` does.
+
+**A `standard.Widget` with a parent is not a window.** `isWindow()` is `False` until you call
+`setWindowFlags(Qt.Window)`; without it the widget silently becomes a child in the parent's
+layout. `standard.Dialog` is a window straight away. Both persist geometry on close — `Widget`
+via `WidgetMixin.closeEvent`, `Dialog` via `closeEvent → reject()` — so state saving is *not*
+what distinguishes them.
+
+**Qt destroys child widgets without sending a close event.** A window that saves its state in
+`closeEvent` therefore loses it when the parent goes away. Hosts close such children explicitly:
+see the `browser_windows` loop and the `commit_file_diff_window` line in `MainView.closeEvent`.
+
+
+**`_prepare_labels()` drops `'HEAD'`,** so a detached HEAD row has no chip at all — measured:
+`_prepare_labels(['HEAD']) == []`. `GraphDelegate._row_labels()` puts it back when no branch chip
+on the row was marked current.
+
+**`commit.tags` cannot distinguish an attached from a detached HEAD.** Both read
+`['HEAD', 'heads/main']` on a branch tip — measured through `dag.RepoReader`. Only
+`model.currentbranch` knows, and it is the literal string `'HEAD'` when detached
+(`cola/gitcmds.py:241`). Git refuses a branch named `HEAD`, so `'heads/' + currentbranch` needs no
+special case.
+
+**The inline HEAD node cannot grow past an outer radius of 8 px.** The semantic paint test's
+tightest sample (`incoming_y`) sits 9 px from the node center and asserts `> node_guard`.
+
+
+**`MonoTextEdit` and `PlainTextEdit` start with `NoWrap`.** `BaseTextEditExtension` sets it
+(`cola/widgets/text.py:102`); the constructor's `line_wrap_mode` only takes effect through
+`set_word_wrapping(True)` (`:337`). A read-only text view that forgets this gets a horizontal
+scrollbar.
+
+**Hiding a parent `QSplitter` hides its children.** `child.isVisible()` becomes `False` - measured
+on the history's nested splitters. Visibility guards written against a child keep working when the
+parent becomes the thing that is toggled.
+
+**A `QSyntaxHighlighter`'s formats are invisible to `QTextCursor.charFormat()`.** They live as
+additional formats in the layout; read them with `block.layout().formats()`.
+
 ## Git output
 
 **`git show --raw` prints nothing for merge commits**, while `--numstat` still prints the combined
@@ -68,6 +111,20 @@ this backwards produces test data that looks plausible and asserts nothing.
 **The `git` wrapper turns kwargs into flags** (`cola/git.py:transform_kwargs`): `raw=True` →
 `--raw`, `no_renames=True` → `--no-renames`, `foo=False` is dropped, `foo='bar'` → `--foo=bar`.
 Single-character keys get one dash. `_readonly=True` is a wrapper hint, not a git flag.
+
+
+**`git show` takes more than one revision.** `git show <a> <b> … --format= --numstat --raw
+--no-renames -z` emits one raw+numstat block per revision, in the order given, in exactly the
+shape `parse_status_and_numstat` already parses. It is the cheapest way to describe a whole
+selection, and it works for a root commit — unlike `<root>~`, which does not resolve.
+
+**`--numstat -z` does not NUL-separate the numstat fields.** Despite "use NULs as output field
+terminators", the row stays `adds<TAB>dels<TAB>path`; only the record ends with NUL. Binary files
+carry `-` instead of a count in both fields.
+
+**`FileWidget.commits_selected` must not grow a git call per commit.**
+`test_public_selection_reaches_all_standalone_consumers_synchronously`
+(`test/widgets_dag_history_test.py`) monkeypatches `git.show` and asserts it ran exactly once.
 
 ## Icons
 
@@ -92,6 +149,12 @@ context wired to a real `git`, `cfg` and `MainModel`. Building your own repo or 
 **There is no `conftest.py`.** `qapp`, `managed_qobject` and `main_context` are defined
 per test file. Copy them from a neighbouring widget test verbatim instead of writing variants.
 
+**`app_context.settings` is a raw `Mock`, and a `Mock` is truthy.** Any widget that calls
+`init_state(context.settings, ...)` therefore takes the restore branch and hands `Mock` objects
+to `QByteArray.fromBase64()` — a `TypeError` at construction time, with a message that says
+nothing about your test. Set `app_context.settings.get_gui_state.return_value = {}` first; that
+is what `main_context` and every `GitDAG` test already do.
+
 **`--doctest-modules` is on and `garden test` collects `cola/` too.** A `>>>` in any production
 docstring becomes a test case.
 
@@ -102,6 +165,14 @@ CI, and lint is a separate step.
 synchronously` and `test_history_widget_owns_history_state_without_window_children` are
 architectural decisions written down as tests. Violating one is a design change requiring
 justification, not a test to be edited into agreement.
+
+
+**`Interaction.confirm` is the console implementation in tests.** `standard.install()` runs only
+from `cola/app.py`, so a confirmation in a test writes to stdout and reads `sys.stdin` — under
+pytest capture that is an error, not a `False`. Monkeypatch it in every test that can reach one.
+
+**`cmds.do()` swallows exceptions** into `Interaction.critical` (`cola/cmds.py:3591`). A broken
+command does not fail a test by itself; assert on the git state or the model instead.
 
 ## Toolchain
 
@@ -116,3 +187,27 @@ those files.
 error codes disabled). It checks `bin` and `cola`, not `test`.
 
 **Python 3.9 is the floor**, enforced by `pyupgrade --py39-plus` in CI and pre-commit.
+
+## The git-fanta rename
+
+**`icons.cola()` keeps its name on purpose.** `cola/widgets/toolbar.py:254` resolves icon names
+with `getattr(icons, name, None)` and `cola/widgets/toolbarcmds.py:283`/`:285` pass `'icon':
+'cola'`. Renaming the function removes the toolbar icon silently — no exception, no log entry.
+The asset it returns is `git-fanta.svg`; the function name is not user-visible.
+
+**`cola/version.py` asks `metadata.version('git-fanta')`,** which must match `name` in
+`pyproject.toml`. If the two drift, `importlib.metadata` raises `PackageNotFoundError` and the
+version display falls back to the builtin value without saying so.
+`test_distribution_name_matches_pyproject` guards it.
+
+**`brew install git-cola` in `.github/workflows/ci.yml` is not a leftover.** It installs the real
+upstream Homebrew formula as a dependency of the macOS job. Renaming it breaks that job.
+
+**A forgotten `'cola.<key>'` literal will not turn a test red.** `cola/gitcfg.py` falls back to
+the old prefix by design, so the stale key keeps working and the rename is quietly incomplete.
+`test_no_legacy_config_key_literals` in `test/rename_guard_test.py` is the only thing that
+notices — there are 34 such literals outside `cola/models/prefs.py`, spread over 16 files.
+
+**The upstream references are load-bearing.** `CHANGES.rst`, the `github.com/git-cola/...` links
+in code comments, and the remotes in `garden.yaml` point at a project that still exists.
+`test_upstream_references_are_preserved` fails if a future rename sweep eats them.

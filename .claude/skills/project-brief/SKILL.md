@@ -5,14 +5,22 @@ description: Orientation for the git-fanta repository — what it is, how the co
 
 # git-fanta
 
-A fork of **git-cola**, the Qt desktop GUI for Git. Upstream naming is untouched — the Python
-package is `cola`, `pyproject.toml` still says `git-cola`, and only the remote
-(`hermes-agent-ak/git-fanta`) and the working directory carry the fork name. Do not "fix" that.
+A fork of git-cola, the Qt desktop GUI for Git, renamed to **git-fanta**. Everything
+user-facing carries the fork name: the `git-fanta` executable, the `git fanta` subcommand,
+`fanta.*` git-config keys, `GIT_FANTA_*` environment variables and `~/.config/git-fanta`.
+The Python package is still `cola` (`import cola`, `cola/`) and `[tool.setuptools] packages`
+names it — that is deliberate, do not "fix" it. References to the upstream project
+(github.com/git-cola/git-cola, `brew install git-cola`, `CHANGES.rst`, the remotes in
+`garden.yaml`) are also deliberate and must stay. See
+`docs/plans/2026-07-30-rename-to-git-fanta.md`.
 
-The fork's own work so far is UI: making the commit history graph a first-class part of the main
-window rather than a separate DAG window. Read `references/fork-history.md` when you need to know
-what this fork changed and why — it also records the design decisions that later changes must not
-undo.
+Seven work packages have shipped: the inline commit history in the main window, the commit
+file panel beside it, the rename itself, double-clicking a file to open its diff in a window, and
+the history's mouse actions (double-click a commit to switch branch) plus the HEAD/current-branch
+marking in the inline graph, and the commit description panel above the history's file list, and the multi-commit file list in the history.
+Read `references/fork-history.md` when you need to know what this fork changed and why — it also
+records the design decisions that later changes must not undo, several of which look arbitrary
+until you see the reasoning.
 
 ## Layout
 
@@ -22,13 +30,13 @@ undo.
 | `cola/models/` | Non-Qt data models: `main.py` (MainModel), `dag.py` (Commit/RepoReader), `graph.py` (the single graph engine, `build_graph()`), `prefs.py`, `selection.py` |
 | `cola/` (top level) | `git.py` (Git process wrapper), `gitcmds.py` (git commands + output parsing), `cmds.py` (undoable commands), `qtutils.py` (widget factories, `Task`/`RunTask`, state helpers), `icons.py` (the **only** file naming icon assets), `hotkeys.py`, `app.py` (`ApplicationContext`), `settings.py`, `i18n.py` |
 | `cola/icons/` | The SVG assets. Check here before assuming an icon exists |
-| `test/` | 36 `*_test.py` files, flat, plus `helper.py`. No `conftest.py` — fixtures are defined per file or imported from `helper` |
+| `test/` | 41 `*_test.py` files, flat, plus `helper.py`. No `conftest.py` — fixtures are defined per file or imported from `helper` |
 | `docs/plans/` | Implementation plans (see Workflow below) |
-| `bin/` | Launchers: `git-cola`, `git-dag`, `git-cola-sequence-editor` |
+| `bin/` | Launchers: `git-fanta`, `git-dag`, `git-fanta-sequence-editor` |
 
 ## Architecture in five sentences
 
-`ApplicationContext` (`cola/app.py:805`) is the dependency container passed to nearly everything:
+`ApplicationContext` (`cola/app.py:807`) is the dependency container passed to nearly everything:
 `context.git`, `.cfg`, `.model`, `.settings`, `.selection`, `.runtask`, `.view`, `.notifier`.
 Widgets take `context` as their first constructor argument and read what they need from it.
 Mutating operations go through `cmds.do(cmds.SomeCommand, context, ...)` rather than direct git
@@ -103,10 +111,14 @@ reinventing these is the most common wasted work in this repo.
 
 ## Workflow
 
-- **Plans live in `docs/plans/YYYY-MM-DD-topic.md`**, written in German, task-structured with
-  TDD RED/GREEN steps and explicit verification commands. Completed plans get a YAML frontmatter
-  block (`status`, `completed_at`, `plan_commit`, `implementation_branch`, `implementation_head`,
-  `ci_run`, `manual_verification`) and stay in place as design records.
+- **Everything written here is English** — plans, docs, commit messages, code comments, and test
+  docstrings alike. The conversation with the user is often German; the artifacts are not. Plans
+  and code comments written before 2026-07-31 are still German in places; correct them when you
+  touch them, never match them.
+- **Plans live in `docs/plans/YYYY-MM-DD-topic.md`**, task-structured with TDD RED/GREEN steps
+  and explicit verification commands. Completed plans get a YAML frontmatter block (`status`,
+  `completed_at`, `plan_commit`, `implementation_branch`, `implementation_head`, `ci_run`,
+  `manual_verification`) and stay in place as design records.
 - **Review a plan before executing it** with the personal `plan-review` skill. Plans in this repo
   have historically shipped with wrong line references and non-terminating test helpers.
 - **Branches**: `tree-ui/<agent>/<model>/<topic>` for feature work (e.g.
@@ -133,3 +145,11 @@ Consult `references/gotchas.md` for the full list with evidence. The short versi
   widgets in one window do not collide.
 - `FileWidget.commits_selected` runs git **synchronously** and a test name says so. Schedule
   policy belongs in the host, not in the shared widget.
+- `CommitDiffWidget.commits_selected()` arms a **100 ms debounce that fires after** whatever you
+  do next. Seeding it and then calling `files_selected()` shows the file diff, then silently
+  replaces it with the whole-commit diff.
+- `app_context.settings` is a **raw `Mock`, and a `Mock` is truthy** — any widget calling
+  `init_state(context.settings, ...)` blows up at construction unless the test sets
+  `get_gui_state.return_value = {}` first.
+- A **forgotten `'cola.<key>'` config literal stays green**: `gitcfg` falls back to the old
+  prefix on purpose, so only `test_no_legacy_config_key_literals` notices.

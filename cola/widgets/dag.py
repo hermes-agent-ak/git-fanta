@@ -22,6 +22,7 @@ from .. import qtcompat
 from .. import qtutils
 from ..compat import maxsize
 from ..i18n import N_
+from ..interaction import Interaction
 from ..models import dag
 from ..models import graph
 from ..models import main
@@ -39,6 +40,7 @@ from . import diff_intraline
 from . import filelist
 from . import finder
 from . import standard
+from . import text
 
 
 def git_dag(context, args=None, existing_view=None, show=True):
@@ -82,6 +84,23 @@ class FocusRedirectProxy:
             func = getattr(self.default, name)
 
         return func(*args, **kwargs)
+
+
+def _confirm_detached_checkout(context, commit):
+    """Warn before a checkout that would leave HEAD detached"""
+    oid = commit.oid[: prefs.abbrev(context)]
+    return Interaction.confirm(
+        N_('Checkout Detached HEAD?'),
+        N_('Commit %s is not the tip of a branch.') % oid,
+        N_(
+            'Checking out this commit detaches HEAD. New commits will not belong '
+            'to any branch and can be lost when you switch away.\n'
+            'Use "Create Branch" if you want to keep working here.'
+        ),
+        N_('Checkout Detached HEAD'),
+        default=False,
+        icon=icons.branch(),
+    )
 
 
 class ViewerMixin:
@@ -292,6 +311,33 @@ class ViewerMixin:
         """Checkout a commit using an anonymous detached HEAD"""
         context = self.context
         self.with_oid(lambda oid: cmds.do(cmds.Checkout, context, [oid]))
+
+    def checkout_commit(self, commit):
+        """Go to the branch at `commit`, or to the commit itself after a warning
+
+        A commit that is the tip of exactly one local branch is what the user
+        means by "take me to that branch", so it is checked out by name. Several
+        branches at the same commit are ambiguous and go through the existing
+        Checkout Branch dialog. Anything else would detach HEAD, which is a state
+        the user has to opt into.
+        """
+        if commit is None or commit.oid in (dag.STAGE, dag.WORKTREE):
+            return
+        context = self.context
+        branches = list(commit.branches)
+        if context.model.currentbranch in branches:
+            return
+        if len(branches) == 1:
+            cmds.do(cmds.CheckoutBranch, context, branches[0])
+            return
+        if branches:
+            guicmds.checkout_branch(context, default=branches[0])
+            return
+        if 'HEAD' in commit.tags:
+            return
+        if not _confirm_detached_checkout(context, commit):
+            return
+        cmds.do(cmds.Checkout, context, [commit.oid])
 
     def save_blob_dialog(self):
         """Save a file blob from the selected commit"""
@@ -709,6 +755,7 @@ COMMIT_ROLE = Qt.UserRole + 3
 _REMOTES_PREFIX = 'remotes/'
 _TAGS_PREFIX = 'tags/'
 _HEADS_PREFIX = 'heads/'
+_HEAD_REF = 'HEAD'
 
 
 class RefType(enum.Enum):
@@ -741,6 +788,59 @@ def _parse_ref(ref: str) -> tuple[str, str | None, str | None, RefType]:
     return ref, ref, None, RefType.OTHER
 
 
+def _is_token_char(text: str, index: int) -> bool:
+    """Would the character at `index` make a match a partial one?
+
+    '.' is deliberately absent: it ends sentences ("... in dag.py.") and it is
+    already part of the needle when it separates a name from its extension.
+    """
+    if index < 0 or index >= len(text):
+        return False
+    char = text[index]
+    return char.isalnum() or char in '_-/'
+
+
+def commit_message_file_spans(text, paths):
+    """Return sorted, non-overlapping (start, end, path) spans for mentioned files.
+
+    A path is recognised by any of its suffixes that begin at a directory
+    boundary, so 'cola/widgets/dag.py' is also found as 'widgets/dag.py' and as
+    'dag.py'. Matching ignores case and never cuts into a surrounding token, so
+    'dag.py' is not found inside 'mydag.py' or 'dag.pyc'. The longest candidate
+    wins, which keeps a full path from being reported as its own basename.
+    """
+    if not text or not paths:
+        return []
+    needles = {}
+    for path in paths:
+        segments = [segment for segment in path.split('/') if segment]
+        for index in range(len(segments)):
+            needle = '/'.join(segments[index:]).lower()
+            if needle:
+                needles.setdefault(needle, path)
+    haystack = text.lower()
+    spans = []
+    # Longest first so that a full path claims its range before its basename
+    # can; ties break on the needle itself to keep the result reproducible.
+    for needle in sorted(needles, key=lambda item: (-len(item), item)):
+        start = haystack.find(needle)
+        while start != -1:
+            end = start + len(needle)
+            overlaps = any(
+                start < taken_end and taken_start < end
+                for taken_start, taken_end, _taken_path in spans
+            )
+            if (
+                not overlaps
+                and not _is_token_char(haystack, start - 1)
+                and not _is_token_char(haystack, end)
+            ):
+                spans.append((start, end, needles[needle]))
+            start = haystack.find(needle, start + 1)
+    spans.sort()
+    return spans
+
+
 def _prepare_labels(refs: list[str]) -> list[tuple[str, str, str | None]]:
     """Decide which labels to condense and return (ref, display_text, condensed_text).
 
@@ -756,7 +856,7 @@ def _prepare_labels(refs: list[str]) -> list[tuple[str, str, str | None]]:
 
     non_group: list[tuple[str, str]] = []
     for ref in refs:
-        if ref == 'HEAD':
+        if ref == _HEAD_REF:
             continue
 
         display, condensed, branch_name, ref_type = _parse_ref(ref)
@@ -961,11 +1061,27 @@ def inline_graph_style(palette):
     chip_text = _best_contrast(
         chip_text_candidates, (chip_other, chip_remote, chip_head)
     )
+    head_fill = _mix_color(highlight, base, 0.16)
+    # The ring around the HEAD node used to be a fixed mix of highlight and
+    # highlightedText. Measured over eight palettes its contrast against the row
+    # and against the node it surrounds was between 1.00 and 1.98 - at 1.00 it is
+    # literally the background color. Pick the candidate that stays visible.
+    head_accent = _best_contrast(
+        (
+            _mix_color(highlight, highlighted_text, 0.52),
+            highlight,
+            text,
+            highlighted_text,
+            neutral_low,
+            neutral_high,
+        ),
+        (base, alternate, highlight, head_fill),
+    )
     return InlineGraphStyle(
         normal_fill=_mix_color(base, text, 0.18),
         merge_fill=_mix_color(alternate, highlight, 0.44),
-        head_fill=_mix_color(highlight, base, 0.16),
-        head_accent=_mix_color(highlight, highlighted_text, 0.52),
+        head_fill=head_fill,
+        head_accent=head_accent,
         outline=_mix_color(text, base, 0.18),
         text=text,
         selected_text=selected_text,
@@ -983,17 +1099,26 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
     DOT_RADIUS = 5
     EDGE_WIDTH = 3
     ROW_HEIGHT = 26
+    # Falle F4: der Paint-Test laesst nur 8 px aeusseren Rand zu
+    # (6.5 + 3/2 = 8). Der HEAD-Knoten wird deshalb dicker, nicht groesser.
+    HEAD_RING_RADIUS = DOT_RADIUS + 1.5
+    HEAD_RING_WIDTH = 3
 
     LABEL_BORDER = 3
     LABEL_SPACING = 4
     LABEL_TEXT_OFFSET = 2
     ANIMATION_DURATION = 50
+    # The Branches dock marks the current branch with a star icon
+    # (cola/widgets/branch.py). The inline graph draws text, so it uses the glyph.
+    CURRENT_BRANCH_MARKER = chr(0x2605) + ' '
+    CURRENT_BRANCH_BORDER = 2
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._hover_item: object | None = None
         self._hover_label_idx: int = -1
         self._expand_progress: float = 0.0
+        self._current_branch = ''
         self._animation = QtCore.QVariantAnimation(self)
         self._animation.setDuration(self.ANIMATION_DURATION)
         self._animation.valueChanged.connect(self._on_animation_value)
@@ -1009,6 +1134,53 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         if self._expand_progress == 0.0:
             self._hover_item = None
             self._hover_label_idx = -1
+
+    def set_current_branch(self, name: str) -> None:
+        """Remember which local branch HEAD points at.
+
+        gitcmds.current_branch() returns the literal string 'HEAD' when HEAD is
+        detached. Git refuses a branch named HEAD, so 'heads/HEAD' never matches
+        a real ref and nothing gets marked in that case, which is correct.
+        """
+        name = name or ''
+        if name == self._current_branch:
+            return
+        self._current_branch = name
+        parent = self.parent()
+        if parent is not None:
+            parent.viewport().update()
+
+    def _is_current_branch_ref(self, ref: str) -> bool:
+        """Is `ref` the local branch HEAD is on?"""
+        return bool(self._current_branch) and (
+            ref == _HEADS_PREFIX + self._current_branch
+        )
+
+    def _is_current_position_ref(self, ref: str) -> bool:
+        """Is this chip the place HEAD currently points at?"""
+        return ref == _HEAD_REF or self._is_current_branch_ref(ref)
+
+    def _row_labels(self, tags: list[str]) -> list[tuple[str, str, str | None]]:
+        """_prepare_labels() with the current position marked.
+
+        _prepare_labels() drops 'HEAD' because an attached HEAD is already
+        implied by the marked branch chip. A detached HEAD has no branch to
+        mark, so it gets its own chip - the same one the standalone GraphView
+        has always drawn.
+        """
+        labels = []
+        marked = False
+        for ref, display_text, condensed_text in _prepare_labels(tags):
+            if self._is_current_branch_ref(ref):
+                marked = True
+                marker = self.CURRENT_BRANCH_MARKER
+                display_text = marker + display_text
+                if condensed_text is not None:
+                    condensed_text = marker + condensed_text
+            labels.append((ref, display_text, condensed_text))
+        if _HEAD_REF in tags and not marked:
+            labels.insert(0, (_HEAD_REF, _HEAD_REF, None))
+        return labels
 
     def set_hover(self, item: object | None, label_idx: int) -> None:
         if item == self._hover_item and label_idx == self._hover_label_idx:
@@ -1092,15 +1264,18 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
                 }
                 if row.color == GraphRowColor.HEAD:
                     accent_pen = QtGui.QPen(style.head_accent)
-                    accent_pen.setWidth(2)
+                    accent_pen.setWidth(self.HEAD_RING_WIDTH)
                     painter.setPen(accent_pen)
                     painter.setBrush(Qt.NoBrush)
                     painter.drawEllipse(
                         QtCore.QPointF(cx, mid_y),
-                        self.DOT_RADIUS + 2,
-                        self.DOT_RADIUS + 2,
+                        self.HEAD_RING_RADIUS,
+                        self.HEAD_RING_RADIUS,
                     )
-                outline_pen = QtGui.QPen(style.outline)
+                    outline_color = style.head_accent
+                else:
+                    outline_color = style.outline
+                outline_pen = QtGui.QPen(outline_color)
                 outline_pen.setWidth(2)
                 painter.setPen(outline_pen)
                 painter.setBrush(color_map[row.color])
@@ -1162,10 +1337,10 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         x_offset = self.LABEL_TEXT_OFFSET
         y_offset = 0
 
-        for i, (tag, display_text, condensed_text) in enumerate(_prepare_labels(tags)):
+        for i, (tag, display_text, condensed_text) in enumerate(self._row_labels(tags)):
             if painter is not None:
                 brush = style.chip_other
-                if tag == 'HEAD' or tag.startswith(_TAGS_PREFIX):
+                if tag == _HEAD_REF or tag.startswith(_TAGS_PREFIX):
                     brush = style.chip_remote
                 elif tag.startswith(_HEADS_PREFIX):
                     brush = style.chip_head
@@ -1173,7 +1348,10 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
                 if selected_text is not None:
                     candidates = (_opaque_color(selected_text),) + candidates
                 chip_text = _best_contrast(candidates, (brush,))
-                painter.setPen(QtGui.QPen(chip_text))
+                chip_pen = QtGui.QPen(chip_text)
+                if self._is_current_position_ref(tag):
+                    chip_pen.setWidth(self.CURRENT_BRANCH_BORDER)
+                painter.setPen(chip_pen)
                 painter.setBrush(brush)
 
             shown, text_width = self._label_shown_text(
@@ -1281,7 +1459,7 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         mid_y = rect.center().y()
         text_height = font_metrics.height()
         for i, (_, display_text, condensed_text) in enumerate(
-            _prepare_labels(commit.tags)
+            self._row_labels(commit.tags)
         ):
             _, text_width = self._label_shown_text(
                 condensed_text, display_text, font_metrics, item, i
@@ -1373,6 +1551,7 @@ class CommitTreeWidget(standard.TreeWidget, ViewerMixin):
         self.itemSelectionChanged.connect(
             self.selection_changed, type=Qt.QueuedConnection
         )
+        self.itemDoubleClicked.connect(self._commit_double_clicked)
 
     def export_state(self):
         """Export the widget's state"""
@@ -1392,7 +1571,10 @@ class CommitTreeWidget(standard.TreeWidget, ViewerMixin):
             # We only care about the first two columns. This allows the final
             # column to stretch and shrink.
             self.set_column_widths(column_widths[:2])
-            self._column_init_state = ColumnInitState.SHOW_EVENT
+            # Skip both the showEvent default resize AND the post-graph-load
+            # resizeColumnToContents() so that user-picked widths stick across
+            # restarts.
+            self._column_init_state = ColumnInitState.GRAPH
         return True
 
     # Qt overrides
@@ -1414,6 +1596,10 @@ class CommitTreeWidget(standard.TreeWidget, ViewerMixin):
         if event.type() == QtCore.QEvent.PaletteChange:
             self.viewport().update()
         super().changeEvent(event)
+
+    def set_current_branch(self, name):
+        """Tell the graph delegate which local branch HEAD is on"""
+        self.graph_delegate.set_current_branch(name)
 
     def display_inline_graph(self, enabled):
         """Enable and disable the display of inline graph in the commit list"""
@@ -1540,6 +1726,10 @@ class CommitTreeWidget(standard.TreeWidget, ViewerMixin):
         all_oids = [commit.oid for commit in self.commits]
         cmds.do(cmds.FormatPatch, context, oids, all_oids)
 
+    def _commit_double_clicked(self, item, _column):
+        'A double-click means "take me to that branch".'
+        self.checkout_commit(getattr(item, 'commit', None))
+
     # Qt overrides
     def contextMenuEvent(self, event):
         """Create a custom context menu and execute it"""
@@ -1585,6 +1775,79 @@ class _HistoryCacheMetadata:
     generation: int = 0
 
 
+class CommitMessageHighlighter(QtGui.QSyntaxHighlighter):
+    """Bold the subject line and mark the files the message talks about"""
+
+    def __init__(self, edit):
+        QtGui.QSyntaxHighlighter.__init__(self, edit.document())
+        self._edit = edit
+        self.spans = []
+
+    def set_spans(self, spans):
+        """Replace the marked ranges and repaint"""
+        self.spans = list(spans)
+        self.rehighlight()
+
+    def highlightBlock(self, block_text):
+        block = self.currentBlock()
+        if block.blockNumber() == 0 and block_text:
+            subject_format = QtGui.QTextCharFormat()
+            subject_format.setFontWeight(QtGui.QFont.Bold)
+            self.setFormat(0, len(block_text), subject_format)
+        if not self.spans:
+            return
+        # The palette is read on every pass instead of being cached, so a theme
+        # change repaints correctly - the same rule the inline graph follows.
+        style = inline_graph_style(self._edit.palette())
+        file_format = QtGui.QTextCharFormat()
+        file_format.setBackground(style.chip_other)
+        file_format.setForeground(style.chip_text)
+        file_format.setFontWeight(QtGui.QFont.Bold)
+        start = block.position()
+        end = start + block.length()
+        for span_start, span_end, _path in self.spans:
+            if span_start >= end or span_end <= start:
+                continue
+            self.setFormat(
+                max(span_start, start) - start,
+                min(span_end, end) - max(span_start, start),
+                file_format,
+            )
+
+
+class CommitDescriptionWidget(text.MonoTextEdit):
+    """Show the message of the selected commit, with its files marked"""
+
+    def __init__(self, context, parent=None):
+        text.MonoTextEdit.__init__(self, context, parent=parent, readonly=True)
+        self.context = context
+        # MonoTextEdit starts out with NoWrap; a commit message needs to wrap.
+        self.set_word_wrapping(True)
+        self.highlighter = CommitMessageHighlighter(self)
+
+    def clear(self):
+        """Drop the text and the marked ranges together"""
+        self.highlighter.set_spans([])
+        self.setPlainText('')
+
+    def set_commit(self, commit, paths=()):
+        """Show `commit`'s message and mark `paths` wherever it names them"""
+        if commit is None or commit.oid in (dag.STAGE, dag.WORKTREE):
+            self.clear()
+            return
+        status, message, _err = self.context.git.show(
+            commit.oid, no_patch=True, format='%B', _readonly=True
+        )
+        if status != 0:
+            self.clear()
+            return
+        # Spans are computed before the text is set so that the first
+        # highlighting pass already has them.
+        self.highlighter.spans = commit_message_file_spans(message, list(paths))
+        self.setPlainText(message)
+        self.highlighter.rehighlight()
+
+
 class CommitHistoryWidget(QtWidgets.QWidget):
     """Reusable commit history controls, tree, and loading state."""
 
@@ -1600,6 +1863,7 @@ class CommitHistoryWidget(QtWidgets.QWidget):
         display_status=False,
         parent=None,
         display_inline_graph=False,
+        display_files=False,
     ):
         super().__init__(parent)
         self.context = context
@@ -1630,6 +1894,11 @@ class CommitHistoryWidget(QtWidgets.QWidget):
         self.loading = False
         self.error_status = None
         self._widgets_initialized = False
+        self._files_dirty = False
+        self._files_timer = QtCore.QTimer(self)
+        self._files_timer.setSingleShot(True)
+        self._files_timer.setInterval(100)
+        self._files_timer.timeout.connect(self._load_pending_files)
 
         self.revtext = GitDagLineEdit(context)
         self.revtext.setText(ref)
@@ -1655,6 +1924,28 @@ class CommitHistoryWidget(QtWidgets.QWidget):
             display_status,
         )
 
+        self.filewidget = filelist.FileWidget(context, self)
+        self.descriptionwidget = CommitDescriptionWidget(context, self)
+        # Beide Haelften sind einklappbar: wer nur die Dateien sehen will, zieht
+        # den Griff hoch. Dafuer braucht es keine zweite Menue-Aktion.
+        self.details_splitter = qtutils.splitter(
+            Qt.Vertical, self.descriptionwidget, self.filewidget
+        )
+        self.details_splitter.setVisible(display_files)
+        self.files_splitter = qtutils.splitter(
+            Qt.Horizontal, self.treewidget, self.details_splitter
+        )
+        self.files_splitter.setChildrenCollapsible(False)
+        self.files_splitter.setStretchFactor(0, 3)
+        self.files_splitter.setStretchFactor(1, 1)
+
+        self.display_files_action = qtutils.add_action_bool(
+            self,
+            N_('Display Commit Details'),
+            self.display_files,
+            display_files,
+        )
+
         controls_layout = qtutils.hbox(
             defs.no_margin,
             defs.spacing,
@@ -1666,8 +1957,15 @@ class CommitHistoryWidget(QtWidgets.QWidget):
         controls_widget = QtWidgets.QWidget(self)
         controls_widget.setLayout(controls_layout)
         layout = qtutils.vbox(
-            defs.no_margin, defs.spacing, controls_widget, self.treewidget
+            defs.no_margin, defs.spacing, controls_widget, self.files_splitter
         )
+        # Eingabezeile, Baum und Dateiliste ruecken gemeinsam von der Dockkante ab,
+        # damit sie buendig bleiben.
+        layout.setContentsMargins(defs.margin, 0, 0, 0)
+        # Pin the controls row to its natural height; give the splitter the
+        # remaining vertical space.
+        layout.setStretchFactor(controls_widget, 0)
+        layout.setStretchFactor(self.files_splitter, 1)
         self.setLayout(layout)
 
         self.treewidget.commits_selected.connect(self.select_commits)
@@ -1838,6 +2136,9 @@ class CommitHistoryWidget(QtWidgets.QWidget):
             self.clear()
             self.commit_list = commit_list
             self.commits.update(commit_map)
+            # Vor add_commits: resizeColumnToContents() fragt sizeHint(), und die
+            # Breite des markierten Chips haengt am aktuellen Branch.
+            self.treewidget.set_current_branch(self.model.currentbranch)
             self.treewidget.add_commits(commit_list, graph_result)
 
         self.selection = list(selection)
@@ -1845,6 +2146,7 @@ class CommitHistoryWidget(QtWidgets.QWidget):
         self.treewidget.select_commits(selection)
         self.commits_loaded.emit(list(commit_list))
         self.commits_selected.emit(list(selection))
+        self._schedule_files()
 
     def stop_and_wait(self):
         """Stop scheduling work and wait fully for the active worker."""
@@ -1860,6 +2162,7 @@ class CommitHistoryWidget(QtWidgets.QWidget):
                 thread.wait()
             self._finalize_thread(thread)
         self.loading = False
+        self._files_timer.stop()
 
     def _display_worktree_status(self, _enabled):
         """Reload after toggling WORKTREE and STAGE pseudo-commits."""
@@ -1912,6 +2215,53 @@ class CommitHistoryWidget(QtWidgets.QWidget):
         self.selection = list(commits)
         self.treewidget.select_commits(commits)
         self.commits_selected.emit(list(commits))
+        self._schedule_files()
+
+    def display_files(self, enabled=None):
+        """Toggle the embedded commit details panel and reload the selection"""
+        if enabled is None:
+            enabled = self.display_files_action.isChecked()
+        self.details_splitter.setVisible(bool(enabled))
+        if enabled and self.selection:
+            self._schedule_files()
+        else:
+            self._files_timer.stop()
+            self._files_dirty = False
+            self.filewidget.clear()
+            self.descriptionwidget.clear()
+
+    def _schedule_files(self):
+        """Debounce a file list refresh keyed to the current selection."""
+        if self.stopping:
+            return
+        if not self.filewidget.isVisible():
+            # Defer until the panel becomes visible again.
+            self._files_dirty = True
+            return
+        self._files_dirty = False
+        self._files_timer.start()
+
+    def _load_pending_files(self):
+        """Drive the file widget with the current selection, respecting visibility."""
+        if self.stopping:
+            return
+        if not self.selection or not self.filewidget.isVisible():
+            self._files_dirty = False
+            return
+        self._files_dirty = False
+        self.filewidget.commits_selected(self.selection)
+        # FileWidget arbeitet synchron - die Pfade stehen unmittelbar danach fest.
+        # Das ist eine zugesicherte Eigenschaft, siehe
+        # test_public_selection_reaches_all_standalone_consumers_synchronously.
+        self.descriptionwidget.set_commit(
+            self.selection[-1], self.filewidget.all_paths()
+        )
+
+    def refresh_files(self):
+        """Apply a selection that was skipped while the panel was hidden."""
+        if self._files_dirty and self.filewidget.isVisible():
+            self._files_timer.stop()
+            self._load_pending_files()
 
     def clear(self):
         """Clear the tree and all applied history state."""
@@ -1920,6 +2270,8 @@ class CommitHistoryWidget(QtWidgets.QWidget):
         self.selection = []
         self.old_selection = []
         self.treewidget.clear()
+        self.filewidget.clear()
+        self.descriptionwidget.clear()
 
     def export_state(self):
         """Export history-child state independently of any main window."""
@@ -1930,6 +2282,9 @@ class CommitHistoryWidget(QtWidgets.QWidget):
             'count': get(self.maxresults),
             'display_inline_graph': self.display_inline_graph_action.isChecked(),
             'display_status': self.display_status_action.isChecked(),
+            'display_files': self.display_files_action.isChecked(),
+            'files_sizes': get(self.files_splitter),
+            'details_sizes': get(self.details_splitter),
             'log': log_state,
         }
 
@@ -1949,6 +2304,27 @@ class CommitHistoryWidget(QtWidgets.QWidget):
             and 1 <= count <= 9_999_999
             and isinstance(display_status, bool)
             and isinstance(display_inline_graph, bool)
+        ):
+            return False
+        display_files = state.get('display_files', False)
+        if not isinstance(display_files, bool):
+            return False
+        files_sizes = state.get('files_sizes')
+        if files_sizes is not None and not (
+            isinstance(files_sizes, (list, tuple))
+            and all(
+                isinstance(size, int) and not isinstance(size, bool)
+                for size in files_sizes
+            )
+        ):
+            return False
+        details_sizes = state.get('details_sizes')
+        if details_sizes is not None and not (
+            isinstance(details_sizes, (list, tuple))
+            and all(
+                isinstance(size, int) and not isinstance(size, bool)
+                for size in details_sizes
+            )
         ):
             return False
         log_state = state.get('log')
@@ -1973,12 +2349,24 @@ class CommitHistoryWidget(QtWidgets.QWidget):
             'display_status', self.display_status_action.isChecked()
         )
         display_inline_graph = state.get('display_inline_graph', True)
+        display_files = state.get(
+            'display_files', self.display_files_action.isChecked()
+        )
+        files_sizes = state.get('files_sizes')
         log_state = state.get('log')
 
         self.set_values(ref, count, display_status)
         self.treewidget.display_inline_graph(display_inline_graph)
         with qtutils.BlockSignals(self.display_inline_graph_action):
             self.display_inline_graph_action.setChecked(display_inline_graph)
+        self.display_files(display_files)
+        with qtutils.BlockSignals(self.display_files_action):
+            self.display_files_action.setChecked(display_files)
+        if files_sizes:
+            self.files_splitter.setSizes(list(files_sizes))
+        details_sizes = state.get('details_sizes')
+        if details_sizes:
+            self.details_splitter.setSizes(list(details_sizes))
         if log_state is not None:
             self.treewidget.apply_state(log_state)
         return True
@@ -2009,7 +2397,10 @@ class CommitHistoryWidget(QtWidgets.QWidget):
         super().showEvent(event)
         if not self._widgets_initialized:
             self._widgets_initialized = True
-            self.maxresults.setMinimumHeight(self.revtext.height())
+            # Use sizeHint() rather than height() so the controls row is sized
+            # from its natural geometry, not whatever the splitter assigned.
+            self.maxresults.setMinimumHeight(self.revtext.sizeHint().height())
+        self.refresh_files()
 
 
 class GitDAG(standard.MainWindow):
@@ -2058,6 +2449,14 @@ class GitDAG(standard.MainWindow):
         self.filewidget.files_selected.connect(
             self.diffwidget.files_selected, type=Qt.QueuedConnection
         )
+        # Ein wiederverwendetes Fenster fuer beide Dateilisten dieses Fensters:
+        # das file_dock und das (standardmaessig verborgene) Panel im History-Widget.
+        self.commit_file_diff_window = None
+        for file_widget in (self.filewidget, self.historywidget.filewidget):
+            file_widget.file_diff_requested.connect(
+                self._show_commit_file_diff, type=Qt.QueuedConnection
+            )
+
         self.filewidget.difftool_selected.connect(
             self.difftool_selected, type=Qt.QueuedConnection
         )
@@ -2207,6 +2606,16 @@ class GitDAG(standard.MainWindow):
             )
         else:
             self.setWindowTitle(project + N_(' - DAG'))
+
+    def _show_commit_file_diff(self, commits, filename):
+        """Zeigt den Diff der doppelgeklickten Datei in einem eigenen Fenster"""
+        self.commit_file_diff_window = diff.show_commit_file_diff(
+            self.context,
+            self,
+            commits,
+            filename,
+            window=self.commit_file_diff_window,
+        )
 
     def export_state(self):
         """Store persistent window state plus canonical nested history state."""
@@ -2425,6 +2834,8 @@ class GitDAG(standard.MainWindow):
         self.search_line_range_in_oid(oid)
 
     def closeEvent(self, event):
+        if self.commit_file_diff_window is not None:
+            self.commit_file_diff_window.close()
         self.historywidget.close_popup()
         self.historywidget.stop_and_wait()
         standard.MainWindow.closeEvent(self, event)

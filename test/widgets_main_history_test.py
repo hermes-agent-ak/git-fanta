@@ -16,6 +16,7 @@ from cola import qtutils
 from cola.interaction import Interaction
 from cola.models import dag as dag_model
 from cola.models import graph as graph_model
+from cola.widgets import defs
 from cola.widgets import standard
 from cola.widgets.dag import GRAPH_ROW_ROLE
 from cola.widgets.dag import CommitHistoryWidget
@@ -35,6 +36,9 @@ HISTORY_KEYS = {
     'count',
     'display_inline_graph',
     'display_status',
+    'display_files',
+    'files_sizes',
+    'details_sizes',
     'log',
 }
 
@@ -79,7 +83,7 @@ def qapp():
     instance = QtWidgets.QApplication.instance()
     if instance is None:
         instance = QtWidgets.QApplication(
-            sys.argv[:1] if sys.argv else ['git-cola-test']
+            sys.argv[:1] if sys.argv else ['git-fanta-test']
         )
     yield instance
 
@@ -988,11 +992,17 @@ def test_export_owns_visibility_and_nests_exact_canonical_history_state(
     )
     assert set(state['history']) == HISTORY_KEYS
     assert state['history'] == history.export_state()
-    assert state['history'] == {
+    # files_sizes is excluded from the hardcoded comparison because it depends
+    # on the live splitter geometry.
+    history_state = dict(state['history'])
+    history_state.pop('files_sizes', None)
+    history_state.pop('details_sizes', None)
+    assert history_state == {
         'ref': 'main --',
         'count': 321,
         'display_inline_graph': True,
         'display_status': True,
+        'display_files': True,
         'log': {'column_widths': [211, 122]},
     }
     assert HISTORY_KEYS.isdisjoint(state.keys())
@@ -1000,7 +1010,14 @@ def test_export_owns_visibility_and_nests_exact_canonical_history_state(
     restored = managed_qobject(MainView(main_context))
     _show(qapp, restored)
     assert restored.apply_state(state)
-    assert restored.historywidget.export_state() == state['history']
+    # files_sizes depends on the live splitter geometry and is excluded.
+    restored_history = dict(restored.historywidget.export_state())
+    restored_history.pop('files_sizes', None)
+    restored_history.pop('details_sizes', None)
+    expected_history = dict(state['history'])
+    expected_history.pop('files_sizes', None)
+    expected_history.pop('details_sizes', None)
+    assert restored_history == expected_history
 
 
 def test_export_history_visibility_is_independent_of_hidden_parent(
@@ -1047,7 +1064,11 @@ def test_malformed_task7_state_is_rejected_before_any_existing_state_changes(
     window.lock_layout_action.setChecked(False)
     window.statuswidget.filter_widget.hide()
     window.model.set_ref_sort(0)
+    # files_sizes depends on the live splitter geometry and is therefore
+    # excluded from the atomic-rejection assertion.
     before_history = window.historywidget.export_state()
+    before_history.pop('files_sizes', None)
+    before_history.pop('details_sizes', None)
 
     state = _legacy_v2_state(window)
     state.update(
@@ -1061,12 +1082,15 @@ def test_malformed_task7_state_is_rejected_before_any_existing_state_changes(
     assert window.apply_state(state) is False
     qapp.processEvents()
 
+    after_history = window.historywidget.export_state()
+    after_history.pop('files_sizes', None)
+    after_history.pop('details_sizes', None)
     assert window.dockWidgetArea(window.statusdock) == QtCore.Qt.LeftDockWidgetArea
     assert window.lock_layout is False
     assert window.lock_layout_action.isChecked() is False
     assert window.statuswidget.filter_widget.isVisible() is False
     assert window.model.ref_sort == 0
-    assert window.historywidget.export_state() == before_history
+    assert after_history == before_history
     assert window.historydock.isVisible()
     assert _history_is_active(window.historydock)
 
@@ -1097,10 +1121,17 @@ def test_missing_history_child_is_valid_legacy_state(
     window = managed_qobject(MainView(main_context))
     state = _legacy_v2_state(window)
     _show(qapp, window)
+    # Exclude files_sizes because the live splitter geometry can shift as a
+    # side effect of apply_state setting dock visibility.
     defaults = window.historywidget.export_state()
+    defaults.pop('files_sizes', None)
+    defaults.pop('details_sizes', None)
 
     assert window.apply_state(state)
-    assert window.historywidget.export_state() == defaults
+    after = window.historywidget.export_state()
+    after.pop('files_sizes', None)
+    after.pop('details_sizes', None)
+    assert after == defaults
     assert window.historydock.isVisible()
     assert _history_is_active(window.historydock)
 
@@ -1225,6 +1256,7 @@ def test_view_menu_is_rebuilt_without_duplicates_and_finds_dynamic_toolbars(
     window = managed_qobject(MainView(main_context))
     history_toggle = window.historydock.toggleViewAction()
     inline_graph = window.historywidget.display_inline_graph_action
+    commit_files = window.historywidget.display_files_action
 
     window.build_view_menu(window.view_menu)
     qapp.processEvents()
@@ -1244,6 +1276,9 @@ def test_view_menu_is_rebuilt_without_duplicates_and_finds_dynamic_toolbars(
         ]
         assert [action for action in actions if action is inline_graph] == [
             inline_graph
+        ]
+        assert [action for action in actions if action is commit_files] == [
+            commit_files
         ]
         assert inline_graph.isChecked() is True
         assert [action for action in actions if action is dynamic_toggle] == [
@@ -1385,3 +1420,268 @@ def test_mainview_close_waits_for_real_blocked_history_and_discards_pending(
     order.clear()
     assert window.close()
     assert order == ['popup', 'stop', 'standard']
+
+
+def _wait_for_commit_files(qapp, window, expected):
+    """Pump the event loop until the debounced file list matches expected."""
+    history = window.historywidget
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        qapp.processEvents()
+        paths = {
+            history.filewidget.topLevelItem(i).path
+            for i in range(history.filewidget.topLevelItemCount())
+        }
+        if not history._files_timer.isActive() and paths == expected:
+            return paths
+        QtTest.QTest.qWait(10)
+    raise AssertionError(f'file list never became {expected}')
+
+
+def test_main_history_lists_files_of_the_selected_commit(
+    qapp, main_context, managed_qobject
+):
+    """The commit file panel lists the files of the selected commit."""
+    _git('commit', '-m', 'base')
+    main_context.model.update_status()
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+    _wait_for_history(qapp, window)
+
+    _wait_for_commit_files(qapp, window, {'A', 'B'})
+
+    filewidget = window.historywidget.filewidget
+    assert filewidget.isVisible()
+    assert {
+        filewidget.topLevelItem(i).status for i in range(filewidget.topLevelItemCount())
+    } == {'A'}
+
+
+def test_main_history_file_panel_follows_the_selection(
+    qapp, main_context, managed_qobject
+):
+    """Selecting an older commit updates the file list."""
+    _git('commit', '-m', 'base')
+    with open('C', 'w', encoding='utf-8') as handle:
+        handle.write('c\n')
+    _git('add', 'C')
+    _git('commit', '-m', 'second')
+    main_context.model.update_status()
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+    _wait_for_history(qapp, window)
+    # The newest commit is the top row and is selected automatically.
+    _wait_for_commit_files(qapp, window, {'C'})
+    tree = window.historywidget.treewidget
+
+    # Row 1 is the older commit; itemSelectionChanged is a QueuedConnection,
+    # so the wait helper below pumps the event loop first.
+    tree.setCurrentItem(tree.topLevelItem(1))
+
+    assert _wait_for_commit_files(qapp, window, {'A', 'B'}) == {'A', 'B'}
+
+
+def test_main_history_file_panel_lives_inside_the_history_dock(
+    qapp, main_context, managed_qobject
+):
+    """The panel is part of the history widget, not a dock of its own."""
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+    history = window.historywidget
+
+    assert window.historydock.widget() is history
+    assert history.files_splitter.indexOf(history.details_splitter) == 1
+    assert history.details_splitter.indexOf(history.filewidget) == 1
+    assert history.findChildren(QtWidgets.QDockWidget) == []
+    assert window.widget_version == 2
+
+
+def test_main_history_hides_unsupported_file_actions(
+    qapp, main_context, managed_qobject
+):
+    """Context menu entries without a main-window handler are not offered."""
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+    filewidget = window.historywidget.filewidget
+
+    assert not filewidget.show_history_action.isVisible()
+    assert not filewidget.launch_difftool_action.isVisible()
+    assert not filewidget.grab_file_action.isVisible()
+    assert not filewidget.grab_file_from_parent_action.isVisible()
+    assert not filewidget.select_line_range_action.isVisible()
+    assert filewidget.launch_editor_action.isVisible()
+
+
+def test_double_click_in_file_panel_opens_the_diff_window(
+    qapp, main_context, managed_qobject
+):
+    """Ein Doppelklick im Datei-Panel oeffnet das Diff-Fenster des Hauptfensters."""
+    main_context.runtask = Mock()
+    view = managed_qobject(MainView(main_context))
+    filewidget = view.historywidget.filewidget
+    commit = Mock()
+    commit.oid = 'a' * 40
+    commit.author = 'A U Thor'
+    commit.email = 'author@example.com'
+    commit.authdate = '2026-01-01'
+    commit.summary = 'summary'
+    filewidget.commits_selected([commit])
+    filewidget.list_files(['3\t1\tsrc/a.py'])
+
+    filewidget.itemDoubleClicked.emit(filewidget.topLevelItem(0), 0)
+    qapp.processEvents()
+
+    assert view.commit_file_diff_window is not None
+    assert 'src/a.py' in view.commit_file_diff_window.windowTitle()
+
+
+def test_second_double_click_reuses_the_diff_window(
+    qapp, main_context, managed_qobject
+):
+    main_context.runtask = Mock()
+    view = managed_qobject(MainView(main_context))
+    filewidget = view.historywidget.filewidget
+    commit = Mock()
+    commit.oid = 'a' * 40
+    commit.author = 'A U Thor'
+    commit.email = 'author@example.com'
+    commit.authdate = '2026-01-01'
+    commit.summary = 'summary'
+    filewidget.commits_selected([commit])
+    filewidget.list_files(['3\t1\tsrc/a.py', '0\t2\tsrc/b.py'])
+
+    filewidget.itemDoubleClicked.emit(filewidget.topLevelItem(0), 0)
+    qapp.processEvents()
+    first_window = view.commit_file_diff_window
+    filewidget.itemDoubleClicked.emit(filewidget.topLevelItem(1), 0)
+    qapp.processEvents()
+
+    assert view.commit_file_diff_window is first_window
+    assert 'src/b.py' in first_window.windowTitle()
+
+
+def test_main_view_starts_without_a_diff_window(qapp, main_context, managed_qobject):
+    view = managed_qobject(MainView(main_context))
+
+    assert view.commit_file_diff_window is None
+
+
+def test_history_dock_title_is_indented(qapp, main_context, managed_qobject):
+    """Die Ueberschrift 'History' klebt nicht mehr an der Kante."""
+    view = managed_qobject(MainView(main_context))
+
+    titlebar = view.historydock.titleBarWidget()
+
+    assert titlebar.title_layout.contentsMargins().left() == defs.margin
+
+
+def test_other_dock_titles_stay_flush(qapp, main_context, managed_qobject):
+    """Der neue Parameter aendert per Default nichts an den uebrigen Docks."""
+    view = managed_qobject(MainView(main_context))
+
+    for dock in (view.statusdock, view.commitdock, view.diffdock):
+        assert dock.titleBarWidget().title_layout.contentsMargins().left() == 0
+
+
+def test_history_content_is_indented_and_stays_aligned(
+    qapp, main_context, managed_qobject
+):
+    """Eingabezeile und Baum ruecken gemeinsam ein, damit sie buendig bleiben."""
+    view = managed_qobject(MainView(main_context))
+    history = view.historywidget
+
+    margins = history.layout().contentsMargins()
+
+    assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == (
+        defs.margin,
+        0,
+        0,
+        0,
+    )
+    _show(qapp, view)
+    assert history.revtext.parentWidget().x() == history.files_splitter.x()
+
+
+def test_double_click_in_the_main_window_checks_out_and_reloads(
+    qapp, main_context, managed_qobject, monkeypatch
+):
+    """Der Doppelklick wechselt den Branch und die History zieht nach.
+
+    Interaction.confirm wird ersetzt, weil die Konsolenvariante sonst stdin liest;
+    dieser Fall darf sie ohnehin nicht erreichen.
+    """
+    monkeypatch.setattr(Interaction, 'confirm', staticmethod(lambda *a, **kw: False))
+    _git('commit', '-m', 'base')
+    original_branch = _git('branch', '--show-current')
+    _git('checkout', '-b', 'topic')
+    _git('commit', '--allow-empty', '-m', 'topic')
+    topic_oid = _git('rev-parse', 'HEAD')
+    _git('checkout', original_branch)
+    main_context.model.update_status()
+    window, refresh_calls = _main_with_refresh_spy(
+        main_context, managed_qobject, monkeypatch
+    )
+    _wait_for_history(qapp, window, topic_oid)
+    tree = window.historywidget.treewidget
+    refresh_baseline = len(refresh_calls)
+
+    tree.itemDoubleClicked.emit(tree.oidmap[topic_oid], 0)
+    _wait_for_head(qapp, window, topic_oid, refresh_calls, refresh_baseline)
+
+    assert main_context.model.currentbranch == 'topic'
+    assert _git('branch', '--show-current') == 'topic'
+
+
+def test_double_click_marks_the_new_branch_in_the_graph(
+    qapp, main_context, managed_qobject, monkeypatch
+):
+    """Nach dem Wechsel traegt der neue Branch die Markierung."""
+    monkeypatch.setattr(Interaction, 'confirm', staticmethod(lambda *a, **kw: False))
+    _git('commit', '-m', 'base')
+    original_branch = _git('branch', '--show-current')
+    _git('checkout', '-b', 'topic')
+    _git('commit', '--allow-empty', '-m', 'topic')
+    topic_oid = _git('rev-parse', 'HEAD')
+    _git('checkout', original_branch)
+    main_context.model.update_status()
+    window, refresh_calls = _main_with_refresh_spy(
+        main_context, managed_qobject, monkeypatch
+    )
+    _wait_for_history(qapp, window, topic_oid)
+    tree = window.historywidget.treewidget
+    refresh_baseline = len(refresh_calls)
+
+    tree.itemDoubleClicked.emit(tree.oidmap[topic_oid], 0)
+    _wait_for_head(qapp, window, topic_oid, refresh_calls, refresh_baseline)
+
+    labels = tree.graph_delegate._row_labels(
+        window.historywidget.commits[topic_oid].tags
+    )
+    assert [display for _ref, display, _condensed in labels] == [f'{chr(0x2605)} topic']
+
+
+def test_selected_commit_shows_its_description_with_marked_files(
+    qapp, main_context, managed_qobject
+):
+    """Auswahl im Hauptfenster -> Message im Panel, Dateiname darin markiert."""
+    with open('described.txt', 'w', encoding='utf-8') as handle:
+        handle.write('content\n')
+    _git('add', 'described.txt')
+    _git(
+        'commit',
+        '-m',
+        'feat: add described.txt\n\nThe file described.txt carries the content.',
+    )
+    main_context.model.update_status()
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+    _wait_for_history(qapp, window)
+    _wait_for_commit_files(qapp, window, {'described.txt', 'A', 'B'})
+
+    description = window.historywidget.descriptionwidget
+    assert description.toPlainText().startswith('feat: add described.txt')
+    assert 'The file described.txt carries the content.' in description.toPlainText()
+    assert [path for _start, _end, path in description.highlighter.spans] == [
+        'described.txt',
+        'described.txt',
+    ]

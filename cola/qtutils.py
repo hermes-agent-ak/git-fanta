@@ -688,7 +688,7 @@ def persist_clipboard_macos(text: str) -> None:
 
     Qt's QClipboard on macOS does not always hand a persistent copy of the
     string to the system pasteboard, so the clipboard contents can be lost
-    when git-cola exits. Writing through AppKit's NSPasteboard ensures the
+    when git-fanta exits. Writing through AppKit's NSPasteboard ensures the
     pasteboard server retains its own copy.
 
     C.f. https://developer.apple.com/documentation/appkit/nspasteboard
@@ -708,7 +708,7 @@ def persist_clipboard(text: str | None = None) -> None:
 
     X11 stores only a reference to the clipboard data.
     Send a clipboard event to force a copy of the clipboard to occur.
-    This ensures that the clipboard is present after git-cola exits.
+    This ensures that the clipboard is present after git-fanta exits.
     Otherwise, the reference is destroyed on exit.
 
     On MacOS, Qt does not always hand a persistent copy of the clipboard
@@ -1037,7 +1037,12 @@ class DockTitleBarWidget(QtWidgets.QFrame):
     """Provides a dockwidget titlebar that can be extended with custom widgets"""
 
     def __init__(
-        self, parent, title: str, stretch: bool = True, hide_title: bool = False
+        self,
+        parent,
+        title: str,
+        stretch: bool = True,
+        hide_title: bool = False,
+        title_indent: int = 0,
     ) -> None:
         QtWidgets.QFrame.__init__(self, parent)
         self.setAutoFillBackground(True)
@@ -1060,6 +1065,7 @@ class DockTitleBarWidget(QtWidgets.QFrame):
 
         self.corner_layout = hbox(defs.no_margin, defs.spacing)
         self.title_layout = hbox(defs.no_margin, defs.button_spacing, self.label)
+        self.title_layout.setContentsMargins(title_indent, 0, 0, 0)
 
         if stretch:
             separator = STRETCH
@@ -1124,12 +1130,15 @@ def create_dock(
     widget: QtWidgets.QWidget | None = None,
     func: Callable | None = None,
     hide_title: bool = False,
+    title_indent: int = 0,
 ) -> QtWidgets.QDockWidget:
     """Create a dock widget and set it up accordingly."""
     dock = QtWidgets.QDockWidget(parent)
     dock.setWindowTitle(title)
     dock.setObjectName(name)
-    titlebar = DockTitleBarWidget(dock, title, stretch=stretch, hide_title=hide_title)
+    titlebar = DockTitleBarWidget(
+        dock, title, stretch=stretch, hide_title=hide_title, title_indent=title_indent
+    )
     dock.setTitleBarWidget(titlebar)
     dock.setAutoFillBackground(True)
     dock.topLevelChanged.connect(titlebar.set_floating)
@@ -1256,7 +1265,7 @@ def mimedata_from_paths(
     mimedata.setText(paths_text)
     if include_urls:
         urls = [QtCore.QUrl.fromLocalFile(path) for path in abspaths]
-        encoding = context.cfg.get('cola.dragencoding', 'utf-16')
+        encoding = context.cfg.get('fanta.dragencoding', 'utf-16')
         encoded_text = core.encode(paths_text, encoding=encoding)
         mimedata.setUrls(urls)
         mimedata.setData('text/x-moz-url', encoded_text)

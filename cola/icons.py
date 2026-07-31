@@ -63,7 +63,7 @@ def icon_themes() -> tuple[tuple[str, str], tuple[str, str], tuple[str, str]]:
 
 
 def name_from_basename(basename: str) -> str:
-    """Prefix the basename with "icons:" so that git-cola's icons are found
+    """Prefix the basename with "icons:" so that git-fanta's icons are found
 
     "icons" is registered with the Qt resource system during install().
 
@@ -145,6 +145,30 @@ def status(filename: str, deleted: bool, is_staged: bool, untracked: bool) -> st
     return icon_name
 
 
+# Status codes produced by "git diff --raw" / "git show --raw".
+# https://git-scm.com/docs/git-diff#diff-format-doc
+DIFF_STATUS_ICONS = {
+    'A': 'plus.svg',  # added
+    'D': 'circle-slash-red.svg',  # deleted
+    'M': 'modified.svg',  # modified
+    'T': 'modified.svg',  # type changed
+    'R': 'git-compare.svg',  # renamed (defensive; we pass --no-renames)
+    'C': 'git-compare.svg',  # copied (defensive)
+}
+
+
+def diff_status_basename(status, filename):
+    """Map a git diff --raw status code to an icon basename.
+
+    Falls back to the filename-derived basename for unknown or empty codes,
+    mirroring the else-branch of status().
+    """
+    icon = DIFF_STATUS_ICONS.get(status)
+    if icon is not None:
+        return icon
+    return basename_from_filename(filename)
+
+
 # Icons creators and SVG file references
 
 
@@ -194,8 +218,8 @@ def close() -> QtGui.QIcon:
 
 
 def cola() -> QtGui.QIcon:
-    """Git Cola icon"""
-    return icon('git-cola.svg')
+    """Git Fanta icon"""
+    return icon('git-fanta.svg')
 
 
 def commit() -> QtGui.QIcon:
