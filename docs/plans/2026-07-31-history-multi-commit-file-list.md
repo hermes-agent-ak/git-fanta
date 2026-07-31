@@ -32,7 +32,21 @@ ausgeführt werden kann.
 - Schlägt ein Befehl fehl und der Plan nennt keinen Ausweg: **stoppen und melden.**
 
 **Arbeitsverzeichnis.** Alle Befehle laufen im **Wurzelverzeichnis des Repositorys** — dort, wo
-`pyproject.toml` und `garden.yaml` liegen. Der Plan enthält keine absoluten Pfade.
+`pyproject.toml` und `garden.yaml` liegen. Alle Pfade im Plan sind **relativ zu diesem
+Verzeichnis**; der Plan enthält keine absoluten Pfade und braucht keine.
+
+**Werkzeug-Ersetzung — nach Task 0 einmal festlegen und danach überall gleich anwenden.**
+
+| Im Plan geschrieben | Womit ersetzen, falls das nicht läuft |
+|---|---|
+| `python3 -B -m pytest …` | `env3/bin/python -B -m pytest …`, sobald `env3/` existiert |
+| `garden fmt` | `cercis bin bin/git-* cola test extras/sphinxtogithub` und danach `isort --force-single-line-imports --py=39 --no-lines-before=STDLIB bin bin/git-* cola test extras/sphinxtogithub` |
+| `garden check/fmt` | `cercis --check bin bin/git-* cola test extras/sphinxtogithub` |
+
+> **Wichtig:** Legt Task 0 ein `env3/` an, dann gilt `env3/bin/python` für **jeden** weiteren
+> `pytest`-Aufruf in diesem Plan — die Befehle unten sind der Kürze halber alle mit `python3`
+> geschrieben. Ein `python3 -m pytest`, das mit `No module named pytest` abbricht, ist **kein**
+> RED, sondern die falsche Ersetzung.
 
 Standard-Testbefehle:
 
@@ -114,7 +128,7 @@ vorher, und man sieht bloß ein leeres Panel.
 | **F8** | **Der Wortlaut des `UnboundLocalError` hängt von der Python-Version ab.** Ab 3.11 heißt es `cannot access local variable 'oid' where it is not associated with a value`, davor `local variable 'oid' referenced before assignment`. Der Fehler**typ** ist in beiden Fällen `UnboundLocalError` — darauf prüfen, nicht auf den Text. | Der lange Wortlaut gemessen unter Python 3.14.4. Der kurze Wortlaut ist **nicht** gemessen (keine 3.9/3.10 vorhanden) und stammt aus der bekannten CPython-Änderung |
 | **F9** | **`cola/widgets/filelist.py` benutzt keine Typannotationen** und hat kein `from __future__ import annotations`. Neuer Code darf deshalb **keine** Annotationen mitbringen: `int \| None` wäre unter dem Zielinterpreter 3.9 ein Laufzeitfehler. | Gemessen: `grep -c "def .*) ->" cola/widgets/filelist.py` → `0`; `grep -n "from __future__" cola/widgets/filelist.py` → kein Treffer (`cola/git.py:1` und `cola/core.py:6` haben ihn, `filelist.py` nicht) |
 | **F10** | **`pytest.ini` setzt `--doctest-modules`.** Ein `\t` in einem Docstring ist ein echter Tabulator; im Docstring **`\\t`** schreiben, so wie es `parse_status_and_numstat` bereits tut (`cola/widgets/filelist.py:292`). Ein `>>>` würde zum Test. | `pytest.ini:3`; `cola/widgets/filelist.py:292` |
-| **F11** | **Es gibt einen dritten Host.** `cola/sequenceeditor.py:227` hängt `FileWidget.commits_selected` an die Auswahl des Rebase-Editors. Er ist **ungefährlich**: `sequenceeditor.py:562` schneidet die Liste mit `commits = commits[-1:]` auf **genau einen** Commit zurück, erreicht den Mehrfach-Zweig also nie. Für ihn ändert sich nichts. | `cola/sequenceeditor.py:226-228`, `:559-563` |
+| **F11** | **Es gibt einen dritten Host.** `cola/sequenceeditor.py:227` hängt `FileWidget.commits_selected` an die Auswahl des Rebase-Editors. Er ist **ungefährlich**: `cola/sequenceeditor.py:562` schneidet die Liste mit `commits = commits[-1:]` auf **genau einen** Commit zurück, erreicht den Mehrfach-Zweig also nie. Für ihn ändert sich nichts. | `cola/sequenceeditor.py:226-228`, `:559-563` |
 | **F12** | **Kein einziger Test fasst den Mehrfach-Zweig an.** Deshalb ist der Fehler überhaupt ins Release gekommen, und deshalb ist die Suite heute grün, obwohl die Funktion kaputt ist. | Gemessen: `grep -rn "commits_selected(\[.*,.*\])" test/` → kein Treffer |
 | **F13** | **`STAGE` und `WORKTREE` stehen in der sortierten Auswahl immer hinten.** `RepoReader` gibt ihnen `generation = parent_commit.generation + 1` (`cola/models/dag.py:415`, `:431`), und die Auswahl läuft durch `sort_by_generation`. Deshalb gewinnt ihr Status beim `dict.update()` zuletzt — was richtig ist, sie sind der jüngste Stand. | `cola/models/dag.py:405-431`, `cola/widgets/dag.py:1597` |
 | **F14** | **Zeitgleich läuft `docs/plans/2026-08-01-commit-description-panel.md`** und ändert **dieselben zwei Dateien**: es hängt `all_paths()` an `FileWidget` (dessen Task 2) und Tests an `test/widgets_history_filelist_test.py`. Verschiedene Methoden, aber dieselbe Datei. Siehe §6. | `docs/plans/2026-08-01-commit-description-panel.md`, Task 2 |
@@ -335,6 +349,13 @@ def merge_numstat_rows(rows):
 > Einfügereihenfolge.
 
 ### Verifikation
+
+```bash
+garden fmt
+```
+
+> Ohne `garden` die Ersatzbefehle aus der Tabelle in §0. Ist **kein** Formatierer installiert:
+> notieren und weitermachen — der Code unten ist von Hand auf 88 Zeichen gesetzt.
 
 ```bash
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p no:ruff -q test/widgets_history_filelist_test.py 2>&1 | tail -3
@@ -653,12 +674,106 @@ Er kommt aus `cola/widgets/filelist.py`, Zeile mit `if oid in (dag.STAGE, dag.WO
 
 ```bash
 grep -n "    def commits_selected(self, commits):" cola/widgets/filelist.py
-grep -n "    def list_files(self, files_log, status_by_path=None):" cola/widgets/filelist.py
 ```
 
-**Erwartet:** je genau **ein** Treffer. Ersetze **alles zwischen den beiden** — also die
-vollständige Methode `commits_selected`, von ihrer `def`-Zeile bis einschließlich der Zeile
-`self.list_files(numstat_rows, status_by_path=status_by_path)` — durch:
+**Erwartet:** genau **ein** Treffer. Ab dieser Zeile steht **wörtlich** der folgende Block —
+die vollständige Methode `commits_selected`. Lass ihn dir zur Kontrolle ausgeben:
+
+```bash
+sed -n '/^    def commits_selected(self, commits):$/,/^        self.list_files(numstat_rows, status_by_path=status_by_path)$/p' cola/widgets/filelist.py
+```
+
+**Erwartet:** genau dieser Block, 83 Zeilen:
+
+```python
+    def commits_selected(self, commits):
+        self.commits = list(commits)
+        if not commits:
+            self.clear()
+            return
+
+        git = self.context.git
+
+        if len(commits) > 1:
+            # Get a list of changed files for a commit range.
+            start_oid = commits[0].oid
+            end = commits[-1].oid
+            start = start_oid + '~'
+            if end == dag.STAGE:
+                status, out, _ = git.diff(
+                    start,
+                    cached=True,
+                    z=True,
+                    numstat=True,
+                    raw=True,
+                    no_renames=True,
+                )
+            elif end == dag.WORKTREE:
+                if start_oid == dag.STAGE:
+                    status, out, _ = git.diff(
+                        z=True, numstat=True, raw=True, no_renames=True
+                    )
+                else:
+                    status, out, _ = git.diff(
+                        start,
+                        z=True,
+                        numstat=True,
+                        raw=True,
+                        no_renames=True,
+                    )
+            else:
+                status, out, _ = git.diff(
+                    start,
+                    end,
+                    z=True,
+                    numstat=True,
+                    raw=True,
+                    no_renames=True,
+                )
+        else:
+            # Get the list of changed files in a single commit.
+            commit = commits[0]
+            oid = commit.oid
+            # NOTE: The output from "git diff-files --numstat -z" is not equivalent
+            # to the output of "git show --numstat -z". "git diff-files" does not
+            # emit a NULL separator between each entry. That's why we use the
+            # default output (without "-z") and split on newline instead.
+            # This is also true for "git diff-index" as well.
+            if oid == dag.STAGE:
+                status, out, _ = git.diff_index(
+                    'HEAD', cached=True, numstat=True, raw=True, _readonly=True
+                )
+            elif oid == dag.WORKTREE:
+                status, out, _ = git.diff_files(numstat=True, raw=True, _readonly=True)
+            else:
+                status, out, _ = git.show(
+                    oid,
+                    format='',
+                    numstat=True,
+                    raw=True,
+                    no_renames=True,
+                    z=True,
+                    _readonly=True,
+                )
+
+        if status != 0:
+            self.list_files([])
+            return
+
+        # git show uses -z; git diff-index / git diff-files do not.
+        # git diff above always uses -z.
+        if oid in (dag.STAGE, dag.WORKTREE):
+            separator = '\n'
+        else:
+            separator = '\0'
+
+        status_by_path, numstat_rows = parse_status_and_numstat(out, separator)
+        self.list_files(numstat_rows, status_by_path=status_by_path)
+```
+
+Ersetze **genau diesen Block** — nichts davor, nichts danach; die Leerzeile darunter und die
+darauf folgende Zeile `    def list_files(self, files_log, status_by_path=None):` bleiben
+unangetastet — durch:
 
 ```python
     def commits_selected(self, commits):
@@ -801,10 +916,18 @@ Anker:
 grep -n "^## " .claude/skills/project-brief/references/fork-history.md
 ```
 
-Füge den neuen Abschnitt **hinter** den letzten nummerierten Abschnitt und **vor**
-`## Where the fork's tests live` ein. Die Nummer ist die nächste freie — sie hängt davon ab, ob
-`docs/plans/2026-08-01-commit-description-panel.md` schon durch ist. Prüfe das mit dem `grep`
-oben und nimm die nächste Zahl:
+Füge den neuen Abschnitt **hinter** den letzten nummerierten Abschnitt und **direkt vor** die
+Zeile `## Where the fork's tests live` ein.
+
+**Welche Nummer?** Genau eine der beiden folgenden Zeilen trifft zu — entscheide nach der Ausgabe
+des `grep` oben, ohne zu rechnen:
+
+| Letzter nummerierter Abschnitt in der Datei | Dann heißt der neue Abschnitt |
+|---|---|
+| `## 5. Mouse actions and HEAD marking in the history` | `## 6. Multi-commit selection lists the union of the touched files` |
+| `## 6. Commit description above the file list` | `## 7. Multi-commit selection lists the union of the touched files` |
+
+Steht dort etwas anderes: **stoppen und melden.** Ersetze `<N>` unten durch die so bestimmte Zahl:
 
 ```markdown
 ## <N>. Multi-commit selection lists the union of the touched files
@@ -845,8 +968,16 @@ Ergänze außerdem in der Testliste am Dateiende:
 
 ### Schritt 3.2 — `references/gotchas.md`
 
-Hänge im passenden Abschnitt an (bei den git-Ausgabe-Fallen, dort wo die
-`git show --raw`-Merge-Falle steht):
+Anker:
+
+```bash
+grep -n "^## Git output$" -A 2 .claude/skills/project-brief/references/gotchas.md
+grep -n "^## Icons$" .claude/skills/project-brief/references/gotchas.md
+```
+
+**Erwartet:** je genau **ein** Treffer, und `## Icons` steht **hinter** `## Git output`. Füge den
+folgenden Text **ans Ende des Abschnitts `## Git output`** ein, also **direkt vor** die Zeile
+`## Icons` (mit einer Leerzeile davor und danach):
 
 ```markdown
 **`git show` takes more than one revision.** `git show <a> <b> … --format= --numstat --raw
@@ -866,8 +997,15 @@ carry `-` instead of a count in both fields.
 ### Schritt 3.3 — den Hinweis im Beschreibungs-Panel-Plan nachziehen
 
 `docs/plans/2026-08-01-commit-description-panel.md` führt den hier behobenen Fehler als Falle
-**F8** und sagt „Das wird separat behoben, nicht hier". Ist jener Plan noch `status: open`,
-ergänze in seiner F8-Zeile am Ende:
+**F8** und sagt „Das wird separat behoben, nicht hier".
+
+Prüfe zuerst den Status jenes Plans:
+
+```bash
+head -3 docs/plans/2026-08-01-commit-description-panel.md
+```
+
+Steht dort `status: open`, ergänze in seiner F8-Zeile am Ende:
 
 ```markdown
 **Erledigt durch `docs/plans/2026-07-31-history-multi-commit-file-list.md`.** Die Integrationstests jenes Plans dürfen ab jetzt mehrere Commits auswählen; die Beschreibung zeigt weiterhin `selection[-1]`.
@@ -878,14 +1016,24 @@ und werden nicht umgeschrieben (`docs/plans/README.md`).
 
 ### Schritt 3.4 — `SKILL.md`
 
-Erhöhe die Zahl der ausgelieferten Arbeitspakete um eins und ergänze den Aufzählungssatz um
-„and the multi-commit file list in the history".
-
 Anker:
 
 ```bash
 grep -n "work packages have shipped" .claude/skills/project-brief/SKILL.md
 ```
+
+**Erwartet:** genau **ein** Treffer. Genau eine der beiden folgenden Zeilen steht dort — ersetze
+sie durch die danebenstehende, ohne zu rechnen:
+
+| Steht dort | Ersetzen durch |
+|---|---|
+| `Five work packages have shipped:` | `Six work packages have shipped:` |
+| `Six work packages have shipped:` | `Seven work packages have shipped:` |
+
+Steht dort etwas anderes: **stoppen und melden.**
+
+Ergänze außerdem den Aufzählungssatz, der über mehrere Zeilen geht, am Ende um
+„, and the multi-commit file list in the history" — direkt vor dem abschließenden Punkt.
 
 ### Schritt 3.5 — Plan als erledigt markieren
 
