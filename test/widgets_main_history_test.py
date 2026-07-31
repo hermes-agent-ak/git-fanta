@@ -1658,3 +1658,30 @@ def test_double_click_marks_the_new_branch_in_the_graph(
         window.historywidget.commits[topic_oid].tags
     )
     assert [display for _ref, display, _condensed in labels] == [f'{chr(0x2605)} topic']
+
+
+def test_selected_commit_shows_its_description_with_marked_files(
+    qapp, main_context, managed_qobject
+):
+    """Auswahl im Hauptfenster -> Message im Panel, Dateiname darin markiert."""
+    with open('described.txt', 'w', encoding='utf-8') as handle:
+        handle.write('content\n')
+    _git('add', 'described.txt')
+    _git(
+        'commit',
+        '-m',
+        'feat: add described.txt\n\nThe file described.txt carries the content.',
+    )
+    main_context.model.update_status()
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+    _wait_for_history(qapp, window)
+    _wait_for_commit_files(qapp, window, {'described.txt'})
+
+    description = window.historywidget.descriptionwidget
+    assert description.toPlainText().startswith('feat: add described.txt')
+    assert 'The file described.txt carries the content.' in description.toPlainText()
+    assert [path for _start, _end, path in description.highlighter.spans] == [
+        'described.txt',
+        'described.txt',
+    ]
