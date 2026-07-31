@@ -787,6 +787,59 @@ def _parse_ref(ref: str) -> tuple[str, str | None, str | None, RefType]:
     return ref, ref, None, RefType.OTHER
 
 
+def _is_token_char(text: str, index: int) -> bool:
+    """Would the character at `index` make a match a partial one?
+
+    '.' is deliberately absent: it ends sentences ("... in dag.py.") and it is
+    already part of the needle when it separates a name from its extension.
+    """
+    if index < 0 or index >= len(text):
+        return False
+    char = text[index]
+    return char.isalnum() or char in '_-/'
+
+
+def commit_message_file_spans(text, paths):
+    """Return sorted, non-overlapping (start, end, path) spans for mentioned files.
+
+    A path is recognised by any of its suffixes that begin at a directory
+    boundary, so 'cola/widgets/dag.py' is also found as 'widgets/dag.py' and as
+    'dag.py'. Matching ignores case and never cuts into a surrounding token, so
+    'dag.py' is not found inside 'mydag.py' or 'dag.pyc'. The longest candidate
+    wins, which keeps a full path from being reported as its own basename.
+    """
+    if not text or not paths:
+        return []
+    needles = {}
+    for path in paths:
+        segments = [segment for segment in path.split('/') if segment]
+        for index in range(len(segments)):
+            needle = '/'.join(segments[index:]).lower()
+            if needle:
+                needles.setdefault(needle, path)
+    haystack = text.lower()
+    spans = []
+    # Longest first so that a full path claims its range before its basename
+    # can; ties break on the needle itself to keep the result reproducible.
+    for needle in sorted(needles, key=lambda item: (-len(item), item)):
+        start = haystack.find(needle)
+        while start != -1:
+            end = start + len(needle)
+            overlaps = any(
+                start < taken_end and taken_start < end
+                for taken_start, taken_end, _taken_path in spans
+            )
+            if (
+                not overlaps
+                and not _is_token_char(haystack, start - 1)
+                and not _is_token_char(haystack, end)
+            ):
+                spans.append((start, end, needles[needle]))
+            start = haystack.find(needle, start + 1)
+    spans.sort()
+    return spans
+
+
 def _prepare_labels(refs: list[str]) -> list[tuple[str, str, str | None]]:
     """Decide which labels to condense and return (ref, display_text, condensed_text).
 

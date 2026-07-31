@@ -22,6 +22,7 @@ from cola.widgets.dag import CommitHistoryWidget
 from cola.widgets.dag import CommitTreeWidget
 from cola.widgets.dag import CommitTreeWidgetItem
 from cola.widgets.dag import EdgeColor
+from cola.widgets.dag import commit_message_file_spans
 from cola.widgets.dag import GitDAG
 from cola.widgets.dag import GraphDelegate
 from cola.widgets.dag import ReaderThread
@@ -3804,3 +3805,75 @@ def test_head_chip_widens_the_size_hint(qapp, app_context, managed_qobject):
     detached = tree.graph_delegate.sizeHint(option, index).width()
 
     assert detached > attached
+
+
+_SPAN_PATHS = ['cola/widgets/dag.py', 'cola/widgets/filelist.py', 'test/helper.py']
+
+
+@pytest.mark.parametrize(
+    ('scenario', 'text', 'expected'),
+    (
+        ('voller Pfad', 'touch cola/widgets/dag.py now', ['cola/widgets/dag.py']),
+        ('nur Dateiname', 'refactor dag.py a bit', ['dag.py']),
+        ('mittleres Suffix', 'see widgets/filelist.py', ['widgets/filelist.py']),
+        ('Satzende', 'all in dag.py.', ['dag.py']),
+        (
+            'laengster Treffer gewinnt',
+            'in cola/widgets/dag.py',
+            ['cola/widgets/dag.py'],
+        ),
+        ('kein Praefix-Teiltreffer', 'mydag.py untouched', []),
+        ('kein Suffix-Teiltreffer', 'dag.pyc is generated', []),
+        ('falsches Elternverzeichnis', 'src/dag.py elsewhere', []),
+        ('Gross-/Kleinschreibung', 'DAG.PY shouted', ['DAG.PY']),
+        ('zwei Erwaehnungen', 'dag.py and dag.py', ['dag.py', 'dag.py']),
+        ('nichts dabei', 'nothing here', []),
+        ('leerer Text', '', []),
+        (
+            'mehrzeilig',
+            'fix stuff\n\n- cola/widgets/dag.py\n- test/helper.py\n',
+            ['cola/widgets/dag.py', 'test/helper.py'],
+        ),
+    ),
+)
+def test_commit_message_file_spans_finds_mentioned_paths(scenario, text, expected):
+    """Der markierte Ausschnitt ist genau der Text, der die Datei benennt."""
+    spans = commit_message_file_spans(text, _SPAN_PATHS)
+
+    assert [text[start:end] for start, end, _path in spans] == expected, scenario
+
+
+def test_commit_message_file_spans_reports_the_changed_path():
+    """Zurueckgemeldet wird der echte Pfad, nicht der gefundene Ausschnitt."""
+    spans = commit_message_file_spans('see dag.py', _SPAN_PATHS)
+
+    assert [path for _start, _end, path in spans] == ['cola/widgets/dag.py']
+
+
+@pytest.mark.parametrize('paths', ([], [''], ['/']))
+def test_commit_message_file_spans_without_usable_paths(paths):
+    """Ohne brauchbare Pfade wird nichts markiert - und nichts geworfen."""
+    assert commit_message_file_spans('dag.py', paths) == []
+
+
+def test_commit_message_file_spans_are_sorted_and_disjoint():
+    """Die Bereiche kommen sortiert und ueberschneidungsfrei - der Highlighter
+    setzt sie in dieser Reihenfolge und darf sich nicht selbst ueberschreiben."""
+    text = 'cola/widgets/dag.py, dann test/helper.py, dann nochmal dag.py'
+
+    spans = commit_message_file_spans(text, _SPAN_PATHS)
+
+    assert len(spans) == 3
+    assert spans == sorted(spans)
+    assert all(
+        spans[index][1] <= spans[index + 1][0] for index in range(len(spans) - 1)
+    )
+
+
+def test_commit_message_file_spans_are_deterministic_for_equal_length_needles():
+    """Gleich lange Kandidaten duerfen die Reihenfolge nicht dem Zufall ueberlassen."""
+    first = commit_message_file_spans('a/b.py and c/b.py', ['x/a/b.py', 'y/c/b.py'])
+    second = commit_message_file_spans('a/b.py and c/b.py', ['y/c/b.py', 'x/a/b.py'])
+
+    assert first == second
+    assert [path for _start, _end, path in first] == ['x/a/b.py', 'y/c/b.py']
