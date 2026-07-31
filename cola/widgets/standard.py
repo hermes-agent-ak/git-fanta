@@ -1112,9 +1112,37 @@ class MessageBox(Dialog):
         self.init_state(None, self.set_initial_size)
 
     def set_initial_size(self):
-        width = defs.dialog_w
-        height = defs.msgbox_h
-        self.resize(width, height)
+        """Size to the content and centre on the parent window.
+
+        The old fixed 720x128 was the same for a one-line question and for a
+        box with a details pane, which made every confirmation far larger than
+        what it asks. sizeHint() already accounts for the details pane when it
+        is visible, so the two cases separate on their own.
+        """
+        desktop_width, desktop_height = qtutils.desktop_size()
+        hint = self.sizeHint()
+        minimum = self.minimumSizeHint()
+        width = max(hint.width(), minimum.width(), defs.dialog_w // 2)
+        height = max(hint.height(), minimum.height())
+        self.resize(
+            min(width, desktop_width, defs.dialog_w),
+            min(height, desktop_height),
+        )
+        self.center_on_parent()
+
+    def center_on_parent(self):
+        """Move the dialog to the middle of its parent, or of the screen"""
+        parent = self.parentWidget()
+        if parent is not None and parent.isVisible():
+            reference = parent.frameGeometry()
+        else:
+            screen = self.screen() if hasattr(self, 'screen') else None
+            if screen is None:
+                return
+            reference = screen.availableGeometry()
+        frame = self.frameGeometry()
+        frame.moveCenter(reference.center())
+        self.move(frame.topLeft())
 
     def keyPressEvent(self, event):
         """Handle Y/N hotkeys"""
