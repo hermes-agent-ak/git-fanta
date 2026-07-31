@@ -1676,7 +1676,7 @@ def test_selected_commit_shows_its_description_with_marked_files(
     window = managed_qobject(MainView(main_context))
     _show(qapp, window)
     _wait_for_history(qapp, window)
-    _wait_for_commit_files(qapp, window, {'described.txt'})
+    _wait_for_commit_files(qapp, window, {'described.txt', 'A', 'B'})
 
     description = window.historywidget.descriptionwidget
     assert description.toPlainText().startswith('feat: add described.txt')
