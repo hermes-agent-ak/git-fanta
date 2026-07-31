@@ -3,6 +3,7 @@
 
 import subprocess
 import sys
+from unittest.mock import Mock
 
 import pytest
 
@@ -14,6 +15,7 @@ from cola.widgets import dag as dagwidget
 from cola.widgets.dag import CommitTreeWidget
 from cola.widgets.dag import CommitTreeWidgetItem
 from qtpy import QtCore
+from qtpy import QtGui
 from qtpy import QtTest
 from qtpy import QtWidgets
 
@@ -388,3 +390,108 @@ def test_a_local_branch_still_wins_over_a_remote_one(
     tree.checkout_commit(commit)
 
     assert recorded == [(cmds.CheckoutBranch, ('feature',))]
+
+
+def _tree_with_actions(context, managed_qobject):
+    """A commit tree that owns its menu actions, the way GitDAG builds them."""
+    tree = _tree(context, managed_qobject)
+    tree.menu_actions = dagwidget.viewer_actions(tree, tree)
+    return tree
+
+
+def _context_menu_event():
+    position = QtCore.QPoint(-1, -1)
+    return QtGui.QContextMenuEvent(QtGui.QContextMenuEvent.Mouse, position, position)
+
+
+def _row_under_cursor(tree, monkeypatch, commit):
+    """Make itemAt() report a row, the way a real right-click does.
+
+    update_menu_actions() re-reads the row under the cursor and overwrites
+    tree.clicked, so presetting that attribute would be thrown away (trap F13).
+    """
+    item = Mock()
+    item.commit = commit
+    monkeypatch.setattr(tree, 'itemAt', lambda _pos: item)
+
+
+def test_merge_action_is_offered_for_a_branch_with_new_commits(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """The reported feature: a branch ahead of the current one can be merged."""
+    tree = _tree_with_actions(app_context, managed_qobject)
+    monkeypatch.setattr(app_context.model, 'currentbranch', 'main')
+    monkeypatch.setattr(dagwidget.gitcmds, 'can_merge', lambda _context, _ref: True)
+    _row_under_cursor(tree, monkeypatch, _fake_commit('a' * 40, branches=['feature']))
+
+    tree.update_menu_actions(_context_menu_event())
+
+    action = tree.menu_actions['merge_branch']
+    assert action.isEnabled()
+    assert action.text() == 'Merge "feature" into "main"'
+
+
+def test_merge_action_is_disabled_when_there_is_nothing_to_merge(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """A branch already contained in the current one offers nothing."""
+    tree = _tree_with_actions(app_context, managed_qobject)
+    monkeypatch.setattr(app_context.model, 'currentbranch', 'main')
+    monkeypatch.setattr(dagwidget.gitcmds, 'can_merge', lambda _context, _ref: False)
+    _row_under_cursor(tree, monkeypatch, _fake_commit('a' * 40, branches=['feature']))
+
+    tree.update_menu_actions(_context_menu_event())
+
+    action = tree.menu_actions['merge_branch']
+    assert not action.isEnabled()
+    assert action.text() == 'Merge into Current Branch'
+
+
+def test_merge_action_asks_git_only_when_a_ref_exists(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """A click that misses a row must not run git (trap F4)."""
+    tree = _tree_with_actions(app_context, managed_qobject)
+    asked = []
+    monkeypatch.setattr(
+        dagwidget.gitcmds, 'can_merge', lambda _c, ref: asked.append(ref) or True
+    )
+    monkeypatch.setattr(tree, 'itemAt', lambda _pos: None)
+
+    tree.update_menu_actions(_context_menu_event())
+
+    assert asked == []
+    assert not tree.menu_actions['merge_branch'].isEnabled()
+
+
+def test_merge_action_opens_the_dialog_on_that_branch(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """Choosing the action reaches local_merge with the branch preselected."""
+    tree = _tree_with_actions(app_context, managed_qobject)
+    monkeypatch.setattr(app_context.model, 'currentbranch', 'main')
+    monkeypatch.setattr(dagwidget.gitcmds, 'can_merge', lambda _context, _ref: True)
+    opened = []
+    monkeypatch.setattr(
+        dagwidget.merge, 'local_merge', lambda context, ref=None: opened.append(ref)
+    )
+    tree.clicked = _fake_commit('a' * 40, branches=['feature'])
+
+    tree.merge_branch()
+
+    assert opened == ['feature']
+
+
+def test_merge_action_does_nothing_without_a_candidate(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    opened = []
+    tree = _tree_with_actions(app_context, managed_qobject)
+    monkeypatch.setattr(
+        dagwidget.merge, 'local_merge', lambda context, ref=None: opened.append(ref)
+    )
+    tree.clicked = None
+
+    tree.merge_branch()
+
+    assert opened == []

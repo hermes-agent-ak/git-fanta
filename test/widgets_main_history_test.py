@@ -56,6 +56,7 @@ VIEWER_ACTION_KEYS = {
     'diff_commit_all',
     'diff_selected_this',
     'diff_this_selected',
+    'merge_branch',
     'rebase_to_commit',
     'reset_hard',
     'reset_keep',
@@ -359,8 +360,8 @@ def test_mainview_history_context_actions_are_composed_once_and_disable_off_item
 
     assert isinstance(tree.menu_actions, dict)
     assert set(tree.menu_actions) == VIEWER_ACTION_KEYS
-    assert len(tree.menu_actions) == 24
-    assert len(set(tree.menu_actions.values())) == 24
+    assert len(tree.menu_actions) == 25
+    assert len(set(tree.menu_actions.values())) == 25
     assert {
         name for name, action in tree.menu_actions.items() if not action.isVisible()
     } == UNSUPPORTED_MAIN_VIEWER_ACTION_KEYS

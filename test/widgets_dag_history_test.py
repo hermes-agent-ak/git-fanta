@@ -311,8 +311,8 @@ def test_gitdag_composes_history_with_window_only_views(
     assert window.filewidget is not None
     assert window.historywidget.display_inline_graph_action.isChecked() is False
     assert window.historywidget.treewidget.itemDelegateForColumn(0) is None
-    assert len(window.historywidget.treewidget.menu_actions) == 24
-    assert len(set(window.historywidget.treewidget.menu_actions.values())) == 24
+    assert len(window.historywidget.treewidget.menu_actions) == 25
+    assert len(set(window.historywidget.treewidget.menu_actions.values())) == 25
     for name in (
         'active_thread',
         'pending_request',

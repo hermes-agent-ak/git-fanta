@@ -15,6 +15,7 @@ from qtpy.QtCore import Signal
 from .. import cmds
 from .. import core
 from .. import difftool
+from .. import gitcmds
 from .. import guicmds
 from .. import hotkeys
 from .. import icons
@@ -39,6 +40,7 @@ from . import diff
 from . import diff_intraline
 from . import filelist
 from . import finder
+from . import merge
 from . import standard
 from . import text
 
@@ -213,6 +215,29 @@ class ViewerMixin:
     def copy_to_clipboard_short(self):
         """Copy the current commit object ID to the clipboard"""
         self.with_oid_short(qtutils.set_clipboard)
+
+    def merge_candidate_ref(self):
+        """Return the mergeable ref of the right-clicked row, or ''.
+
+        The right-clicked row wins over the selection: a right-click is a
+        statement about the row under the cursor. git is only asked once a ref
+        exists, so a click that misses a row costs nothing.
+        """
+        commit = self.clicked
+        if commit is None:
+            selected = self.selected_item()
+            commit = selected.commit if selected is not None else None
+        ref = merge_candidate(commit, self.context.model.currentbranch)
+        if not ref or not gitcmds.can_merge(self.context, ref):
+            return ''
+        return ref
+
+    def merge_branch(self):
+        """Open the merge dialog with the clicked branch already chosen"""
+        ref = self.merge_candidate_ref()
+        if not ref:
+            return
+        merge.local_merge(self.context, ref=ref)
 
     def checkout_branch(self):
         """Checkout the clicked/selected branch"""
@@ -408,6 +433,19 @@ class ViewerMixin:
         self.menu_actions['diff_commit'].setEnabled(has_single_selection_or_clicked)
         self.menu_actions['diff_commit_all'].setEnabled(has_single_selection_or_clicked)
         self.menu_actions['checkout_branch'].setEnabled(bool(has_branches) and has_oid)
+        merge_ref = self.merge_candidate_ref()
+        merge_action = self.menu_actions['merge_branch']
+        merge_action.setEnabled(bool(merge_ref))
+        if merge_ref:
+            merge_action.setText(
+                N_('Merge "%(revision)s" into "%(branch)s"')
+                % {
+                    'revision': merge_ref,
+                    'branch': self.context.model.currentbranch,
+                }
+            )
+        else:
+            merge_action.setText(N_('Merge into Current Branch'))
         self.menu_actions['checkout_detached'].setEnabled(
             has_single_selection_or_clicked and has_oid
         )
@@ -476,6 +514,7 @@ class ViewerMixin:
         menu.addAction(self.menu_actions['search_line_range'])
         menu.addSeparator()
         menu.addAction(self.menu_actions['checkout_branch'])
+        menu.addAction(self.menu_actions['merge_branch'])
         menu.addAction(self.menu_actions['create_branch'])
         menu.addAction(self.menu_actions['create_tag'])
         menu.addAction(self.menu_actions['rebase_to_commit'])
@@ -599,6 +638,12 @@ def viewer_actions(widget, proxy):
         'checkout_branch': set_icon(
             icons.branch(),
             qtutils.add_action(widget, N_('Checkout Branch'), proxy.checkout_branch),
+        ),
+        'merge_branch': set_icon(
+            icons.merge(),
+            qtutils.add_action(
+                widget, N_('Merge into Current Branch'), proxy.merge_branch
+            ),
         ),
         'checkout_detached': qtutils.add_action(
             widget, N_('Checkout Detached HEAD'), proxy.checkout_detached
