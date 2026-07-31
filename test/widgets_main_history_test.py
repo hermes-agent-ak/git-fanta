@@ -1648,6 +1648,4 @@ def test_double_click_marks_the_new_branch_in_the_graph(
     labels = tree.graph_delegate._row_labels(
         window.historywidget.commits[topic_oid].tags
     )
-    assert [display for _ref, display, _condensed in labels] == [
-        f'{chr(0x2605)} topic'
-    ]
+    assert [display for _ref, display, _condensed in labels] == [f'{chr(0x2605)} topic']
