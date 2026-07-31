@@ -20,7 +20,8 @@ Der Plan ist so geschrieben, dass er **ohne Vorwissen und ohne eigene Entscheidu
 ausgeführt werden kann.
 
 - **Tasks strikt in der Reihenfolge 0 → 7.** Nichts überspringen.
-- **Ein Task = ein Commit.** Die Commit-Message steht am Ende jedes Tasks wörtlich da.
+- **Ein Task = ein Commit.** Die Commit-Message steht am Ende jedes Tasks wörtlich da und ist
+  **auf Englisch** — der Plan ist deutsch, die Git-Historie nicht. Übernimm sie wörtlich.
 - **Jeder Task hat RED → GREEN → VERIFIKATION.** Steht beim RED-Schritt eine erwartete
   Fehlermeldung, muss die tatsächliche Ausgabe dazu passen. Passt sie nicht: **stoppen und
   melden**, nicht weitermachen.
@@ -370,11 +371,11 @@ von `..._without_usable_paths` und 3 Einzeltests.
 ### Commit
 
 ```bash
-git add -A && git commit -m "feat: finde erwaehnte Dateipfade in einer Commit-Message
+git add -A && git commit -m "feat: find file paths mentioned in a commit message
 
-commit_message_file_spans() erkennt einen Pfad an jedem seiner Suffixe an
-/-Grenzen, ohne Ruecksicht auf Gross-/Kleinschreibung und ohne in ein
-umgebendes Token zu schneiden. Der laengste Kandidat gewinnt."
+commit_message_file_spans() recognises a path by any of its suffixes that
+begin at a directory boundary, ignoring case and never cutting into a
+surrounding token. The longest candidate wins."
 ```
 
 ---
@@ -460,10 +461,10 @@ QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p
 ### Commit
 
 ```bash
-git add -A && git commit -m "feat: FileWidget gibt alle gelisteten Pfade heraus
+git add -A && git commit -m "feat: let FileWidget report every listed path
 
-all_paths() ergaenzt selected_paths(). Die Commit-Beschreibung markiert die
-Dateien des Commits, nicht die gerade markierten."
+all_paths() complements selected_paths(). The commit description marks the
+files of the commit, not the ones that happen to be selected."
 ```
 
 ---
@@ -773,12 +774,12 @@ QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p
 ### Commit
 
 ```bash
-git add -A && git commit -m "feat: Beschreibungsfeld fuer den ausgewaehlten Commit
+git add -A && git commit -m "feat: add a description panel for the selected commit
 
-CommitDescriptionWidget ist ein schreibgeschuetztes MonoTextEdit mit
-eingeschaltetem Zeilenumbruch. Der Betreff wird fett, erwaehnte Dateien
-bekommen die Chip-Farben des Inline-Graphen - dieselbe Optik wie die
-Branch-Labels daneben und dieselbe garantierte Lesbarkeit."
+CommitDescriptionWidget is a read-only MonoTextEdit with word wrapping turned
+on. The subject line is bold and mentioned files get the inline graph's chip
+colors - the same look as the branch labels beside them, and the same
+guaranteed contrast."
 ```
 
 ---
@@ -1094,12 +1095,12 @@ QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p
 ### Commit
 
 ```bash
-git add -A && git commit -m "feat: Beschreibung ueber der Dateiliste im History-Panel
+git add -A && git commit -m "feat: stack the description above the history file list
 
-Das rechte Panel ist jetzt ein senkrechter Splitter: oben die Message des
-ausgewaehlten Commits, unten die geaenderten Dateien. Die vorhandene
-Entprellung beschickt beide; ein verstecktes Eltern-Splitter macht die
-bestehenden Sichtbarkeitswaechter automatisch mit."
+The right-hand panel is now a vertical splitter: the selected commit's message
+on top, its changed files below. The existing debounce feeds both, and hiding
+the parent splitter hides the children, so the visibility guards keep working
+untouched."
 ```
 
 ---
@@ -1294,11 +1295,11 @@ QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p
 ### Commit
 
 ```bash
-git add -A && git commit -m "feat: die Aufteilung des Detail-Panels ueberlebt den Neustart
+git add -A && git commit -m "feat: persist how the details panel is split
 
-details_sizes wird exportiert, geprueft und angewandt - die Pruefung steht
-oberhalb des fruehen return fuer 'log', sonst liefe sie fuer genau die
-Altzustaende nicht, fuer die sie gedacht ist."
+details_sizes is exported, validated and applied. The validation sits above the
+early return for 'log', because below it the check would never run for exactly
+the legacy states it was written for."
 ```
 
 ---
@@ -1371,11 +1372,11 @@ garden fmt && QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -
 ### Commit
 
 ```bash
-git add -A && git commit -m "test: ausgewaehlter Commit zeigt Beschreibung mit markierten Dateien
+git add -A && git commit -m "test: selected commit shows its description with marked files
 
-Die Kette aus Auswahl, Entprellung, git show und Markierung laesst sich nur
-im Hauptfenster pruefen. Der Test ist ein Charakterisierungstest des
-fertigen Zustands."
+The chain from selection through the debounce, git show and the marking can
+only be exercised in the main window. This is a characterization test of the
+finished state."
 ```
 
 ---
@@ -1500,7 +1501,7 @@ Prüfung nicht lief.
 ### Commit
 
 ```bash
-git add -A && git commit -m "docs: dokumentiere das Beschreibungs-Panel der History"
+git add -A && git commit -m "docs: document the history's commit description panel"
 ```
 
 ---
