@@ -38,6 +38,7 @@ HISTORY_KEYS = {
     'display_status',
     'display_files',
     'files_sizes',
+    'details_sizes',
     'log',
 }
 
@@ -995,6 +996,7 @@ def test_export_owns_visibility_and_nests_exact_canonical_history_state(
     # on the live splitter geometry.
     history_state = dict(state['history'])
     history_state.pop('files_sizes', None)
+    history_state.pop('details_sizes', None)
     assert history_state == {
         'ref': 'main --',
         'count': 321,
@@ -1011,8 +1013,10 @@ def test_export_owns_visibility_and_nests_exact_canonical_history_state(
     # files_sizes depends on the live splitter geometry and is excluded.
     restored_history = dict(restored.historywidget.export_state())
     restored_history.pop('files_sizes', None)
+    restored_history.pop('details_sizes', None)
     expected_history = dict(state['history'])
     expected_history.pop('files_sizes', None)
+    expected_history.pop('details_sizes', None)
     assert restored_history == expected_history
 
 
@@ -1064,6 +1068,7 @@ def test_malformed_task7_state_is_rejected_before_any_existing_state_changes(
     # excluded from the atomic-rejection assertion.
     before_history = window.historywidget.export_state()
     before_history.pop('files_sizes', None)
+    before_history.pop('details_sizes', None)
 
     state = _legacy_v2_state(window)
     state.update(
@@ -1079,6 +1084,7 @@ def test_malformed_task7_state_is_rejected_before_any_existing_state_changes(
 
     after_history = window.historywidget.export_state()
     after_history.pop('files_sizes', None)
+    after_history.pop('details_sizes', None)
     assert window.dockWidgetArea(window.statusdock) == QtCore.Qt.LeftDockWidgetArea
     assert window.lock_layout is False
     assert window.lock_layout_action.isChecked() is False
@@ -1119,10 +1125,12 @@ def test_missing_history_child_is_valid_legacy_state(
     # side effect of apply_state setting dock visibility.
     defaults = window.historywidget.export_state()
     defaults.pop('files_sizes', None)
+    defaults.pop('details_sizes', None)
 
     assert window.apply_state(state)
     after = window.historywidget.export_state()
     after.pop('files_sizes', None)
+    after.pop('details_sizes', None)
     assert after == defaults
     assert window.historydock.isVisible()
     assert _history_is_active(window.historydock)

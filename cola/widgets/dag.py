@@ -2284,6 +2284,7 @@ class CommitHistoryWidget(QtWidgets.QWidget):
             'display_status': self.display_status_action.isChecked(),
             'display_files': self.display_files_action.isChecked(),
             'files_sizes': get(self.files_splitter),
+            'details_sizes': get(self.details_splitter),
             'log': log_state,
         }
 
@@ -2314,6 +2315,15 @@ class CommitHistoryWidget(QtWidgets.QWidget):
             and all(
                 isinstance(size, int) and not isinstance(size, bool)
                 for size in files_sizes
+            )
+        ):
+            return False
+        details_sizes = state.get('details_sizes')
+        if details_sizes is not None and not (
+            isinstance(details_sizes, (list, tuple))
+            and all(
+                isinstance(size, int) and not isinstance(size, bool)
+                for size in details_sizes
             )
         ):
             return False
@@ -2354,6 +2364,9 @@ class CommitHistoryWidget(QtWidgets.QWidget):
             self.display_files_action.setChecked(display_files)
         if files_sizes:
             self.files_splitter.setSizes(list(files_sizes))
+        details_sizes = state.get('details_sizes')
+        if details_sizes:
+            self.details_splitter.setSizes(list(details_sizes))
         if log_state is not None:
             self.treewidget.apply_state(log_state)
         return True

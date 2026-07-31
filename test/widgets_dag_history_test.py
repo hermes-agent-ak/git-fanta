@@ -1461,8 +1461,10 @@ def test_history_widget_state_round_trips_canonically_between_children(
     # files_sizes is layout-dependent and excluded from this comparison.
     second_state = second.export_state()
     second_state.pop('files_sizes', None)
+    second_state.pop('details_sizes', None)
     expected = dict(state)
     expected.pop('files_sizes', None)
+    expected.pop('details_sizes', None)
     assert second_state == expected
     assert state['ref'] == 'topic -- path'
     assert state['count'] == 4321
@@ -4098,3 +4100,55 @@ def test_history_description_stays_empty_without_selection(
     history._load_pending_files()
 
     assert received == []
+
+
+def test_history_state_carries_the_details_sizes(qapp, app_context, managed_qobject):
+    """Die Hoehe der Beschreibung wird gespeichert."""
+    history = managed_qobject(CommitHistoryWidget(app_context))
+
+    state = history.export_state()
+
+    assert 'details_sizes' in state
+    assert state['details_sizes'] == history.details_splitter.sizes()
+
+
+def test_history_applies_stored_details_sizes(qapp, app_context, managed_qobject):
+    """Gespeicherte Groessen werden an den Splitter durchgereicht.
+
+    Geprueft wird der Aufruf, nicht das Ergebnis: ein nie gezeigter QSplitter
+    verteilt die Groessen selbst neu. Gemessen: nach setSizes([120, 240]) meldet
+    sizes() [159, 317] (Falle F13).
+    """
+    history = managed_qobject(CommitHistoryWidget(app_context))
+    applied = []
+    history.details_splitter.setSizes = lambda sizes: applied.append(list(sizes))
+    state = history.export_state()
+    state['details_sizes'] = [120, 240]
+
+    assert history.apply_state(state)
+    assert applied == [[120, 240]]
+
+
+@pytest.mark.parametrize('details_sizes', ('oops', [1, 'two'], [True, 2], {}))
+def test_history_rejects_malformed_details_sizes(
+    qapp, app_context, managed_qobject, details_sizes
+):
+    """Die Pruefung muss oberhalb des fruehen return fuer 'log' stehen (Falle F9)."""
+    history = managed_qobject(CommitHistoryWidget(app_context))
+    state = history.export_state()
+    state.pop('log', None)
+    state['details_sizes'] = details_sizes
+
+    assert not history.is_valid_state(state)
+
+
+def test_history_accepts_state_without_details_sizes(
+    qapp, app_context, managed_qobject
+):
+    """Ein vor diesem Feature gespeicherter Zustand bleibt gueltig."""
+    history = managed_qobject(CommitHistoryWidget(app_context))
+    state = history.export_state()
+    state.pop('details_sizes')
+
+    assert history.is_valid_state(state)
+    assert history.apply_state(state)
