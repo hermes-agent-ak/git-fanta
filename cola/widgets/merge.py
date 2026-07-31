@@ -12,9 +12,9 @@ from . import defs
 from . import standard
 
 
-def local_merge(context):
+def local_merge(context, ref=None):
     """Provides a dialog for merging branches"""
-    view = Merge(context, qtutils.active_window())
+    view = Merge(context, qtutils.active_window(), ref=ref)
     view.show()
     view.raise_()
     return view
@@ -38,8 +38,6 @@ class Merge(standard.Dialog):
 
         self.revision = completion.GitRefLineEdit(context)
         self.revision.setToolTip(N_('Revision to Merge'))
-        if ref:
-            self.revision.set_value(ref)
 
         self.radio_local = qtutils.radio(text=N_('Local Branch'), checked=True)
         self.radio_remote = qtutils.radio(text=N_('Tracking Branch'))
@@ -143,9 +141,44 @@ class Merge(standard.Dialog):
         # Observer messages
         self.model.updated.connect(self.update_all)
         self.update_all()
+        self.select_ref(ref)
 
         self.init_size(parent=parent)
         self.revision.setFocus()
+
+    def select_ref(self, ref):
+        """Show `ref` as the chosen revision in every widget that displays one.
+
+        The revision field alone is not enough. The radio group decides which
+        refs the list offers, so a tag preselected while "Local Branch" is
+        checked is invisible there -- and selecting any list row overwrites the
+        field, so the first stray click would silently merge something else.
+        Setting the radio, the list selection and the field together keeps them
+        from disagreeing.
+
+        The field is written last on purpose: selecting a list item writes that
+        item into it, so anything else would lose to the list.
+        """
+        if not ref:
+            return
+        model = self.model
+        if ref in model.local_branches:
+            radio = self.radio_local
+        elif ref in model.remote_branches:
+            radio = self.radio_remote
+        elif ref in model.tags:
+            radio = self.radio_tag
+        else:
+            radio = None
+        if radio is not None:
+            radio.setChecked(True)
+            # setChecked() does not emit "released", so the list that the radio
+            # buttons drive has to be rebuilt by hand.
+            self.update_revisions()
+            items = self.revisions.findItems(ref, Qt.MatchExactly)
+            if items:
+                self.revisions.setCurrentItem(items[0])
+        self.revision.set_value(ref)
 
     def update_all(self):
         """Set the branch name for the window title and label."""
