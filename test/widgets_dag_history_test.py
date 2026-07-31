@@ -18,6 +18,7 @@ from cola.widgets import standard
 from cola.widgets.dag import COMMIT_ROLE
 from cola.widgets.dag import GRAPH_PREV_ROW_ROLE
 from cola.widgets.dag import GRAPH_ROW_ROLE
+from cola.widgets.dag import CommitDescriptionWidget
 from cola.widgets.dag import CommitHistoryWidget
 from cola.widgets.dag import CommitTreeWidget
 from cola.widgets.dag import CommitTreeWidgetItem
@@ -3877,3 +3878,145 @@ def test_commit_message_file_spans_are_deterministic_for_equal_length_needles():
 
     assert first == second
     assert [path for _start, _end, path in first] == ['x/a/b.py', 'y/c/b.py']
+
+
+def _description(app_context, managed_qobject):
+    return managed_qobject(CommitDescriptionWidget(app_context, None))
+
+
+def _formats(widget, block_number):
+    """Die Formate eines Blocks.
+
+    Ein QSyntaxHighlighter legt seine Formate als *additional formats* im Layout
+    ab; ueber QTextCursor.charFormat() sind sie nicht sichtbar (Falle F7).
+    """
+    block = widget.document().findBlockByNumber(block_number)
+    return [(rng.start, rng.length, rng.format) for rng in block.layout().formats()]
+
+
+def _message_commit(app_context, oid, message):
+    """Ein Commit-Stellvertreter, dessen Message ueber git.show geliefert wird."""
+    commit = dag.Commit(None, dag.CommitFactory(), oid=oid)
+    commit.summary = message.splitlines()[0]
+    commit.author = 'A U Thor'
+    commit.authdate = '2026-08-01'
+    app_context.git.show = lambda *args, **kwargs: (0, message, '')
+    return commit
+
+
+def test_description_shows_the_commit_message(qapp, app_context, managed_qobject):
+    """Angezeigt wird genau die Message - kein Kopf, keine Zusaetze."""
+    widget = _description(app_context, managed_qobject)
+    commit = _message_commit(app_context, 'a' * 40, 'subject line\n\nbody text')
+
+    widget.set_commit(commit, [])
+
+    assert widget.toPlainText() == 'subject line\n\nbody text'
+
+
+def test_description_wraps_long_lines(qapp, app_context, managed_qobject):
+    """Ohne Umbruch braeuchte man eine waagerechte Bildlaufleiste (Falle F1)."""
+    widget = _description(app_context, managed_qobject)
+
+    assert widget.lineWrapMode() == QtWidgets.QPlainTextEdit.WidgetWidth
+
+
+def test_description_is_read_only(qapp, app_context, managed_qobject):
+    widget = _description(app_context, managed_qobject)
+
+    assert widget.isReadOnly()
+
+
+def test_description_asks_git_for_the_message_body(qapp, app_context, managed_qobject):
+    """Genau ein "git show" ohne Patch, im Format %B."""
+    widget = _description(app_context, managed_qobject)
+    calls = []
+
+    def record(*args, **kwargs):
+        calls.append((args, kwargs))
+        return (0, 'subject', '')
+
+    app_context.git.show = record
+    commit = dag.Commit(None, dag.CommitFactory(), oid='b' * 40)
+
+    widget.set_commit(commit, [])
+
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args == ('b' * 40,)
+    assert kwargs['no_patch'] is True
+    assert kwargs['format'] == '%B'
+
+
+def test_description_marks_the_subject_line(qapp, app_context, managed_qobject):
+    """Die erste Zeile wird fett - sie ist die Ueberschrift des Commits."""
+    widget = _description(app_context, managed_qobject)
+    commit = _message_commit(app_context, 'a' * 40, 'subject line\n\nbody text')
+
+    widget.set_commit(commit, [])
+
+    subject = _formats(widget, 0)
+    assert [(start, length) for start, length, _fmt in subject] == [(0, 12)]
+    assert subject[0][2].fontWeight() == QtGui.QFont.Bold
+
+
+def test_description_marks_mentioned_files(qapp, app_context, managed_qobject):
+    """Erwaehnte Dateien bekommen die Chip-Farben des Inline-Graphen."""
+    widget = _description(app_context, managed_qobject)
+    commit = _message_commit(
+        app_context, 'a' * 40, 'subject\n\nsee cola/widgets/dag.py for details'
+    )
+    style = inline_graph_style(widget.palette())
+
+    widget.set_commit(commit, ['cola/widgets/dag.py'])
+
+    body = _formats(widget, 2)
+    assert [(start, length) for start, length, _fmt in body] == [(4, 19)]
+    assert body[0][2].background().color() == style.chip_other
+    assert body[0][2].foreground().color() == style.chip_text
+
+
+def test_description_leaves_unmentioned_files_alone(qapp, app_context, managed_qobject):
+    widget = _description(app_context, managed_qobject)
+    commit = _message_commit(app_context, 'a' * 40, 'subject\n\nnothing to see')
+
+    widget.set_commit(commit, ['cola/widgets/dag.py'])
+
+    assert _formats(widget, 2) == []
+
+
+@pytest.mark.parametrize('oid', (dag.STAGE, dag.WORKTREE))
+def test_description_is_empty_for_pseudo_commits(
+    qapp, app_context, managed_qobject, oid
+):
+    """WORKTREE und STAGE haben keine Message - und duerfen kein git aufrufen."""
+    widget = _description(app_context, managed_qobject)
+    calls = []
+    app_context.git.show = lambda *args, **kwargs: calls.append(args) or (0, '', '')
+    commit = dag.Commit(None, dag.CommitFactory(), oid=oid)
+
+    widget.set_commit(commit, [])
+
+    assert widget.toPlainText() == ''
+    assert calls == []
+
+
+def test_description_clears_without_a_commit(qapp, app_context, managed_qobject):
+    widget = _description(app_context, managed_qobject)
+    commit = _message_commit(app_context, 'a' * 40, 'subject\n\nbody')
+    widget.set_commit(commit, [])
+
+    widget.set_commit(None, [])
+
+    assert widget.toPlainText() == ''
+
+
+def test_description_survives_a_failed_git_call(qapp, app_context, managed_qobject):
+    """Ein fehlgeschlagenes git show leert das Feld, statt Muell anzuzeigen."""
+    widget = _description(app_context, managed_qobject)
+    app_context.git.show = lambda *args, **kwargs: (128, '', 'boom')
+    commit = dag.Commit(None, dag.CommitFactory(), oid='c' * 40)
+
+    widget.set_commit(commit, [])
+
+    assert widget.toPlainText() == ''

@@ -40,6 +40,7 @@ from . import diff_intraline
 from . import filelist
 from . import finder
 from . import standard
+from . import text
 
 
 def git_dag(context, args=None, existing_view=None, show=True):
@@ -1772,6 +1773,79 @@ class _HistoryCacheMetadata:
     count: int
     display_status: bool
     generation: int = 0
+
+
+class CommitMessageHighlighter(QtGui.QSyntaxHighlighter):
+    """Bold the subject line and mark the files the message talks about"""
+
+    def __init__(self, edit):
+        QtGui.QSyntaxHighlighter.__init__(self, edit.document())
+        self._edit = edit
+        self.spans = []
+
+    def set_spans(self, spans):
+        """Replace the marked ranges and repaint"""
+        self.spans = list(spans)
+        self.rehighlight()
+
+    def highlightBlock(self, block_text):
+        block = self.currentBlock()
+        if block.blockNumber() == 0 and block_text:
+            subject_format = QtGui.QTextCharFormat()
+            subject_format.setFontWeight(QtGui.QFont.Bold)
+            self.setFormat(0, len(block_text), subject_format)
+        if not self.spans:
+            return
+        # The palette is read on every pass instead of being cached, so a theme
+        # change repaints correctly - the same rule the inline graph follows.
+        style = inline_graph_style(self._edit.palette())
+        file_format = QtGui.QTextCharFormat()
+        file_format.setBackground(style.chip_other)
+        file_format.setForeground(style.chip_text)
+        file_format.setFontWeight(QtGui.QFont.Bold)
+        start = block.position()
+        end = start + block.length()
+        for span_start, span_end, _path in self.spans:
+            if span_start >= end or span_end <= start:
+                continue
+            self.setFormat(
+                max(span_start, start) - start,
+                min(span_end, end) - max(span_start, start),
+                file_format,
+            )
+
+
+class CommitDescriptionWidget(text.MonoTextEdit):
+    """Show the message of the selected commit, with its files marked"""
+
+    def __init__(self, context, parent=None):
+        text.MonoTextEdit.__init__(self, context, parent=parent, readonly=True)
+        self.context = context
+        # MonoTextEdit starts out with NoWrap; a commit message needs to wrap.
+        self.set_word_wrapping(True)
+        self.highlighter = CommitMessageHighlighter(self)
+
+    def clear(self):
+        """Drop the text and the marked ranges together"""
+        self.highlighter.set_spans([])
+        self.setPlainText('')
+
+    def set_commit(self, commit, paths=()):
+        """Show `commit`'s message and mark `paths` wherever it names them"""
+        if commit is None or commit.oid in (dag.STAGE, dag.WORKTREE):
+            self.clear()
+            return
+        status, message, _err = self.context.git.show(
+            commit.oid, no_patch=True, format='%B', _readonly=True
+        )
+        if status != 0:
+            self.clear()
+            return
+        # Spans are computed before the text is set so that the first
+        # highlighting pass already has them.
+        self.highlighter.spans = commit_message_file_spans(message, list(paths))
+        self.setPlainText(message)
+        self.highlighter.rehighlight()
 
 
 class CommitHistoryWidget(QtWidgets.QWidget):
