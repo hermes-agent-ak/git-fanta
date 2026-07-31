@@ -1925,9 +1925,15 @@ class CommitHistoryWidget(QtWidgets.QWidget):
         )
 
         self.filewidget = filelist.FileWidget(context, self)
-        self.filewidget.setVisible(display_files)
+        self.descriptionwidget = CommitDescriptionWidget(context, self)
+        # Beide Haelften sind einklappbar: wer nur die Dateien sehen will, zieht
+        # den Griff hoch. Dafuer braucht es keine zweite Menue-Aktion.
+        self.details_splitter = qtutils.splitter(
+            Qt.Vertical, self.descriptionwidget, self.filewidget
+        )
+        self.details_splitter.setVisible(display_files)
         self.files_splitter = qtutils.splitter(
-            Qt.Horizontal, self.treewidget, self.filewidget
+            Qt.Horizontal, self.treewidget, self.details_splitter
         )
         self.files_splitter.setChildrenCollapsible(False)
         self.files_splitter.setStretchFactor(0, 3)
@@ -1935,7 +1941,7 @@ class CommitHistoryWidget(QtWidgets.QWidget):
 
         self.display_files_action = qtutils.add_action_bool(
             self,
-            N_('Display Commit Files'),
+            N_('Display Commit Details'),
             self.display_files,
             display_files,
         )
@@ -2212,16 +2218,17 @@ class CommitHistoryWidget(QtWidgets.QWidget):
         self._schedule_files()
 
     def display_files(self, enabled=None):
-        """Toggle the embedded commit file panel and reload the current selection."""
+        """Toggle the embedded commit details panel and reload the selection"""
         if enabled is None:
             enabled = self.display_files_action.isChecked()
-        self.filewidget.setVisible(bool(enabled))
+        self.details_splitter.setVisible(bool(enabled))
         if enabled and self.selection:
             self._schedule_files()
         else:
             self._files_timer.stop()
             self._files_dirty = False
             self.filewidget.clear()
+            self.descriptionwidget.clear()
 
     def _schedule_files(self):
         """Debounce a file list refresh keyed to the current selection."""
@@ -2243,6 +2250,12 @@ class CommitHistoryWidget(QtWidgets.QWidget):
             return
         self._files_dirty = False
         self.filewidget.commits_selected(self.selection)
+        # FileWidget arbeitet synchron - die Pfade stehen unmittelbar danach fest.
+        # Das ist eine zugesicherte Eigenschaft, siehe
+        # test_public_selection_reaches_all_standalone_consumers_synchronously.
+        self.descriptionwidget.set_commit(
+            self.selection[-1], self.filewidget.all_paths()
+        )
 
     def refresh_files(self):
         """Apply a selection that was skipped while the panel was hidden."""
@@ -2258,6 +2271,7 @@ class CommitHistoryWidget(QtWidgets.QWidget):
         self.old_selection = []
         self.treewidget.clear()
         self.filewidget.clear()
+        self.descriptionwidget.clear()
 
     def export_state(self):
         """Export history-child state independently of any main window."""

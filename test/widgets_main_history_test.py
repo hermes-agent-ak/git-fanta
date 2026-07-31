@@ -1482,7 +1482,8 @@ def test_main_history_file_panel_lives_inside_the_history_dock(
     history = window.historywidget
 
     assert window.historydock.widget() is history
-    assert history.files_splitter.indexOf(history.filewidget) == 1
+    assert history.files_splitter.indexOf(history.details_splitter) == 1
+    assert history.details_splitter.indexOf(history.filewidget) == 1
     assert history.findChildren(QtWidgets.QDockWidget) == []
     assert window.widget_version == 2
 

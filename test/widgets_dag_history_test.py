@@ -215,6 +215,8 @@ def test_history_widget_owns_history_state_without_window_children(
         'treewidget',
         'filewidget',
         'files_splitter',
+        'details_splitter',
+        'descriptionwidget',
         'active_thread',
         'pending_request',
         'commit_list',
@@ -4020,3 +4022,79 @@ def test_description_survives_a_failed_git_call(qapp, app_context, managed_qobje
     widget.set_commit(commit, [])
 
     assert widget.toPlainText() == ''
+
+
+def test_history_stacks_description_over_the_file_list(
+    qapp, app_context, managed_qobject
+):
+    """Rechts neben der Tabelle steht oben die Beschreibung, unten die Dateien."""
+    history = managed_qobject(CommitHistoryWidget(app_context))
+
+    assert history.files_splitter.indexOf(history.details_splitter) == 1
+    assert history.details_splitter.orientation() == QtCore.Qt.Vertical
+    assert history.details_splitter.indexOf(history.descriptionwidget) == 0
+    assert history.details_splitter.indexOf(history.filewidget) == 1
+
+
+def test_history_hides_and_shows_both_halves_together(
+    qapp, app_context, managed_qobject
+):
+    """Die vorhandene Aktion schaltet das ganze rechte Panel."""
+    history = managed_qobject(CommitHistoryWidget(app_context, display_files=True))
+
+    history.display_files(False)
+    assert not history.details_splitter.isVisible()
+
+    history.display_files(True)
+    assert history.details_splitter.isVisibleTo(history)
+
+
+def test_history_clear_empties_the_description(qapp, app_context, managed_qobject):
+    history = managed_qobject(CommitHistoryWidget(app_context))
+    history.descriptionwidget.setPlainText('leftover')
+
+    history.clear()
+
+    assert history.descriptionwidget.toPlainText() == ''
+
+
+def test_history_feeds_description_with_commit_and_paths(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """Die Beschreibung bekommt den juengsten Commit und die Pfade der Dateiliste."""
+    history = managed_qobject(CommitHistoryWidget(app_context, display_files=True))
+    received = []
+    monkeypatch.setattr(
+        history.descriptionwidget,
+        'set_commit',
+        lambda commit, paths: received.append((commit, list(paths))),
+    )
+    monkeypatch.setattr(history.filewidget, 'commits_selected', lambda commits: None)
+    monkeypatch.setattr(history.filewidget, 'all_paths', lambda: ['src/a.py'])
+    # Der Waechter in _load_pending_files fragt die Dateiliste, nicht den Splitter.
+    monkeypatch.setattr(history.filewidget, 'isVisible', lambda: True)
+    factory = dag.CommitFactory()
+    older = _commit(app_context, factory, 'older')
+    newer = _commit(app_context, factory, 'newer', (older,))
+    history.selection = [older, newer]
+
+    history._load_pending_files()
+
+    assert received == [(newer, ['src/a.py'])]
+
+
+def test_history_description_stays_empty_without_selection(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    history = managed_qobject(CommitHistoryWidget(app_context, display_files=True))
+    received = []
+    monkeypatch.setattr(
+        history.descriptionwidget,
+        'set_commit',
+        lambda commit, paths: received.append(commit),
+    )
+    history.selection = []
+
+    history._load_pending_files()
+
+    assert received == []
