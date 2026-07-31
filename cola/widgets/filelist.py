@@ -86,83 +86,61 @@ class FileWidget(TreeWidget):
             self.clear()
             return
 
+        status_by_path = {}
+        numstat_rows = []
+        for out, separator in self._changed_file_output(commits):
+            parsed_status, parsed_rows = parse_status_and_numstat(out, separator)
+            status_by_path.update(parsed_status)
+            numstat_rows.extend(parsed_rows)
+
+        merged_rows = merge_numstat_rows(numstat_rows)
+        self.list_files(merged_rows, status_by_path=status_by_path)
+
+    def _changed_file_output(self, commits):
+        """Yield an (output, separator) pair for every source in the selection.
+
+        The list shows the union of what the user picked, so all real commits
+        are described by a single "git show" over every one of them. STAGE and
+        WORKTREE are not revisions and need their own commands. A source that
+        fails is skipped rather than emptying the whole list.
+        """
         git = self.context.git
-
-        if len(commits) > 1:
-            # Get a list of changed files for a commit range.
-            start_oid = commits[0].oid
-            end = commits[-1].oid
-            start = start_oid + '~'
-            if end == dag.STAGE:
-                status, out, _ = git.diff(
-                    start,
-                    cached=True,
-                    z=True,
-                    numstat=True,
-                    raw=True,
-                    no_renames=True,
-                )
-            elif end == dag.WORKTREE:
-                if start_oid == dag.STAGE:
-                    status, out, _ = git.diff(
-                        z=True, numstat=True, raw=True, no_renames=True
-                    )
-                else:
-                    status, out, _ = git.diff(
-                        start,
-                        z=True,
-                        numstat=True,
-                        raw=True,
-                        no_renames=True,
-                    )
-            else:
-                status, out, _ = git.diff(
-                    start,
-                    end,
-                    z=True,
-                    numstat=True,
-                    raw=True,
-                    no_renames=True,
-                )
-        else:
-            # Get the list of changed files in a single commit.
-            commit = commits[0]
-            oid = commit.oid
-            # NOTE: The output from "git diff-files --numstat -z" is not equivalent
-            # to the output of "git show --numstat -z". "git diff-files" does not
-            # emit a NULL separator between each entry. That's why we use the
-            # default output (without "-z") and split on newline instead.
-            # This is also true for "git diff-index" as well.
-            if oid == dag.STAGE:
-                status, out, _ = git.diff_index(
-                    'HEAD', cached=True, numstat=True, raw=True, _readonly=True
-                )
-            elif oid == dag.WORKTREE:
-                status, out, _ = git.diff_files(numstat=True, raw=True, _readonly=True)
-            else:
-                status, out, _ = git.show(
-                    oid,
-                    format='',
-                    numstat=True,
-                    raw=True,
-                    no_renames=True,
-                    z=True,
-                    _readonly=True,
-                )
-
-        if status != 0:
-            self.list_files([])
-            return
-
-        # git show uses -z; git diff-index / git diff-files do not.
-        # git diff above always uses -z.
-        if oid in (dag.STAGE, dag.WORKTREE):
-            separator = '\n'
-        else:
-            separator = '\0'
-
-        status_by_path, numstat_rows = parse_status_and_numstat(out, separator)
-        self.list_files(numstat_rows, status_by_path=status_by_path)
+        oids = [
+            commit.oid
+            for commit in commits
+            if commit.oid not in (dag.STAGE, dag.WORKTREE)
+        ]
+        if oids:
+            # "git show" takes several revisions and emits one raw+numstat
+            # block per revision, in the order given -- the same shape it
+            # emits for a single one.
+            status, out, _ = git.show(
+                *oids,
+                format='',
+                numstat=True,
+                raw=True,
+                no_renames=True,
+                z=True,
+                _readonly=True,
+            )
+            if status == 0:
+                yield out, '\0'
+        # NOTE: The output from "git diff-files --numstat -z" is not equivalent
+        # to the output of "git show --numstat -z". "git diff-files" does not
+        # emit a NULL separator between each entry. That's why we use the
+        # default output (without "-z") and split on newline instead.
+        # This is also true for "git diff-index" as well.
+        selected = {commit.oid for commit in commits}
+        if dag.STAGE in selected:
+            status, out, _ = git.diff_index(
+                'HEAD', cached=True, numstat=True, raw=True, _readonly=True
+            )
+            if status == 0:
+                yield out, '\n'
+        if dag.WORKTREE in selected:
+            status, out, _ = git.diff_files(numstat=True, raw=True, _readonly=True)
+            if status == 0:
+                yield out, '\n'
 
     def list_files(self, files_log, status_by_path=None):
         self.clear()
