@@ -38,6 +38,7 @@ HISTORY_KEYS = {
     'display_status',
     'display_files',
     'files_sizes',
+    'details_sizes',
     'log',
 }
 
@@ -995,6 +996,7 @@ def test_export_owns_visibility_and_nests_exact_canonical_history_state(
     # on the live splitter geometry.
     history_state = dict(state['history'])
     history_state.pop('files_sizes', None)
+    history_state.pop('details_sizes', None)
     assert history_state == {
         'ref': 'main --',
         'count': 321,
@@ -1011,8 +1013,10 @@ def test_export_owns_visibility_and_nests_exact_canonical_history_state(
     # files_sizes depends on the live splitter geometry and is excluded.
     restored_history = dict(restored.historywidget.export_state())
     restored_history.pop('files_sizes', None)
+    restored_history.pop('details_sizes', None)
     expected_history = dict(state['history'])
     expected_history.pop('files_sizes', None)
+    expected_history.pop('details_sizes', None)
     assert restored_history == expected_history
 
 
@@ -1064,6 +1068,7 @@ def test_malformed_task7_state_is_rejected_before_any_existing_state_changes(
     # excluded from the atomic-rejection assertion.
     before_history = window.historywidget.export_state()
     before_history.pop('files_sizes', None)
+    before_history.pop('details_sizes', None)
 
     state = _legacy_v2_state(window)
     state.update(
@@ -1079,6 +1084,7 @@ def test_malformed_task7_state_is_rejected_before_any_existing_state_changes(
 
     after_history = window.historywidget.export_state()
     after_history.pop('files_sizes', None)
+    after_history.pop('details_sizes', None)
     assert window.dockWidgetArea(window.statusdock) == QtCore.Qt.LeftDockWidgetArea
     assert window.lock_layout is False
     assert window.lock_layout_action.isChecked() is False
@@ -1119,10 +1125,12 @@ def test_missing_history_child_is_valid_legacy_state(
     # side effect of apply_state setting dock visibility.
     defaults = window.historywidget.export_state()
     defaults.pop('files_sizes', None)
+    defaults.pop('details_sizes', None)
 
     assert window.apply_state(state)
     after = window.historywidget.export_state()
     after.pop('files_sizes', None)
+    after.pop('details_sizes', None)
     assert after == defaults
     assert window.historydock.isVisible()
     assert _history_is_active(window.historydock)
@@ -1482,7 +1490,8 @@ def test_main_history_file_panel_lives_inside_the_history_dock(
     history = window.historywidget
 
     assert window.historydock.widget() is history
-    assert history.files_splitter.indexOf(history.filewidget) == 1
+    assert history.files_splitter.indexOf(history.details_splitter) == 1
+    assert history.details_splitter.indexOf(history.filewidget) == 1
     assert history.findChildren(QtWidgets.QDockWidget) == []
     assert window.widget_version == 2
 
@@ -1649,3 +1658,30 @@ def test_double_click_marks_the_new_branch_in_the_graph(
         window.historywidget.commits[topic_oid].tags
     )
     assert [display for _ref, display, _condensed in labels] == [f'{chr(0x2605)} topic']
+
+
+def test_selected_commit_shows_its_description_with_marked_files(
+    qapp, main_context, managed_qobject
+):
+    """Auswahl im Hauptfenster -> Message im Panel, Dateiname darin markiert."""
+    with open('described.txt', 'w', encoding='utf-8') as handle:
+        handle.write('content\n')
+    _git('add', 'described.txt')
+    _git(
+        'commit',
+        '-m',
+        'feat: add described.txt\n\nThe file described.txt carries the content.',
+    )
+    main_context.model.update_status()
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+    _wait_for_history(qapp, window)
+    _wait_for_commit_files(qapp, window, {'described.txt', 'A', 'B'})
+
+    description = window.historywidget.descriptionwidget
+    assert description.toPlainText().startswith('feat: add described.txt')
+    assert 'The file described.txt carries the content.' in description.toPlainText()
+    assert [path for _start, _end, path in description.highlighter.spans] == [
+        'described.txt',
+        'described.txt',
+    ]

@@ -40,6 +40,7 @@ from . import diff_intraline
 from . import filelist
 from . import finder
 from . import standard
+from . import text
 
 
 def git_dag(context, args=None, existing_view=None, show=True):
@@ -785,6 +786,59 @@ def _parse_ref(ref: str) -> tuple[str, str | None, str | None, RefType]:
         name = ref[len(_HEADS_PREFIX) :]
         return name, name, name, RefType.LOCAL
     return ref, ref, None, RefType.OTHER
+
+
+def _is_token_char(text: str, index: int) -> bool:
+    """Would the character at `index` make a match a partial one?
+
+    '.' is deliberately absent: it ends sentences ("... in dag.py.") and it is
+    already part of the needle when it separates a name from its extension.
+    """
+    if index < 0 or index >= len(text):
+        return False
+    char = text[index]
+    return char.isalnum() or char in '_-/'
+
+
+def commit_message_file_spans(text, paths):
+    """Return sorted, non-overlapping (start, end, path) spans for mentioned files.
+
+    A path is recognised by any of its suffixes that begin at a directory
+    boundary, so 'cola/widgets/dag.py' is also found as 'widgets/dag.py' and as
+    'dag.py'. Matching ignores case and never cuts into a surrounding token, so
+    'dag.py' is not found inside 'mydag.py' or 'dag.pyc'. The longest candidate
+    wins, which keeps a full path from being reported as its own basename.
+    """
+    if not text or not paths:
+        return []
+    needles = {}
+    for path in paths:
+        segments = [segment for segment in path.split('/') if segment]
+        for index in range(len(segments)):
+            needle = '/'.join(segments[index:]).lower()
+            if needle:
+                needles.setdefault(needle, path)
+    haystack = text.lower()
+    spans = []
+    # Longest first so that a full path claims its range before its basename
+    # can; ties break on the needle itself to keep the result reproducible.
+    for needle in sorted(needles, key=lambda item: (-len(item), item)):
+        start = haystack.find(needle)
+        while start != -1:
+            end = start + len(needle)
+            overlaps = any(
+                start < taken_end and taken_start < end
+                for taken_start, taken_end, _taken_path in spans
+            )
+            if (
+                not overlaps
+                and not _is_token_char(haystack, start - 1)
+                and not _is_token_char(haystack, end)
+            ):
+                spans.append((start, end, needles[needle]))
+            start = haystack.find(needle, start + 1)
+    spans.sort()
+    return spans
 
 
 def _prepare_labels(refs: list[str]) -> list[tuple[str, str, str | None]]:
@@ -1721,6 +1775,79 @@ class _HistoryCacheMetadata:
     generation: int = 0
 
 
+class CommitMessageHighlighter(QtGui.QSyntaxHighlighter):
+    """Bold the subject line and mark the files the message talks about"""
+
+    def __init__(self, edit):
+        QtGui.QSyntaxHighlighter.__init__(self, edit.document())
+        self._edit = edit
+        self.spans = []
+
+    def set_spans(self, spans):
+        """Replace the marked ranges and repaint"""
+        self.spans = list(spans)
+        self.rehighlight()
+
+    def highlightBlock(self, block_text):
+        block = self.currentBlock()
+        if block.blockNumber() == 0 and block_text:
+            subject_format = QtGui.QTextCharFormat()
+            subject_format.setFontWeight(QtGui.QFont.Bold)
+            self.setFormat(0, len(block_text), subject_format)
+        if not self.spans:
+            return
+        # The palette is read on every pass instead of being cached, so a theme
+        # change repaints correctly - the same rule the inline graph follows.
+        style = inline_graph_style(self._edit.palette())
+        file_format = QtGui.QTextCharFormat()
+        file_format.setBackground(style.chip_other)
+        file_format.setForeground(style.chip_text)
+        file_format.setFontWeight(QtGui.QFont.Bold)
+        start = block.position()
+        end = start + block.length()
+        for span_start, span_end, _path in self.spans:
+            if span_start >= end or span_end <= start:
+                continue
+            self.setFormat(
+                max(span_start, start) - start,
+                min(span_end, end) - max(span_start, start),
+                file_format,
+            )
+
+
+class CommitDescriptionWidget(text.MonoTextEdit):
+    """Show the message of the selected commit, with its files marked"""
+
+    def __init__(self, context, parent=None):
+        text.MonoTextEdit.__init__(self, context, parent=parent, readonly=True)
+        self.context = context
+        # MonoTextEdit starts out with NoWrap; a commit message needs to wrap.
+        self.set_word_wrapping(True)
+        self.highlighter = CommitMessageHighlighter(self)
+
+    def clear(self):
+        """Drop the text and the marked ranges together"""
+        self.highlighter.set_spans([])
+        self.setPlainText('')
+
+    def set_commit(self, commit, paths=()):
+        """Show `commit`'s message and mark `paths` wherever it names them"""
+        if commit is None or commit.oid in (dag.STAGE, dag.WORKTREE):
+            self.clear()
+            return
+        status, message, _err = self.context.git.show(
+            commit.oid, no_patch=True, format='%B', _readonly=True
+        )
+        if status != 0:
+            self.clear()
+            return
+        # Spans are computed before the text is set so that the first
+        # highlighting pass already has them.
+        self.highlighter.spans = commit_message_file_spans(message, list(paths))
+        self.setPlainText(message)
+        self.highlighter.rehighlight()
+
+
 class CommitHistoryWidget(QtWidgets.QWidget):
     """Reusable commit history controls, tree, and loading state."""
 
@@ -1798,9 +1925,15 @@ class CommitHistoryWidget(QtWidgets.QWidget):
         )
 
         self.filewidget = filelist.FileWidget(context, self)
-        self.filewidget.setVisible(display_files)
+        self.descriptionwidget = CommitDescriptionWidget(context, self)
+        # Beide Haelften sind einklappbar: wer nur die Dateien sehen will, zieht
+        # den Griff hoch. Dafuer braucht es keine zweite Menue-Aktion.
+        self.details_splitter = qtutils.splitter(
+            Qt.Vertical, self.descriptionwidget, self.filewidget
+        )
+        self.details_splitter.setVisible(display_files)
         self.files_splitter = qtutils.splitter(
-            Qt.Horizontal, self.treewidget, self.filewidget
+            Qt.Horizontal, self.treewidget, self.details_splitter
         )
         self.files_splitter.setChildrenCollapsible(False)
         self.files_splitter.setStretchFactor(0, 3)
@@ -1808,7 +1941,7 @@ class CommitHistoryWidget(QtWidgets.QWidget):
 
         self.display_files_action = qtutils.add_action_bool(
             self,
-            N_('Display Commit Files'),
+            N_('Display Commit Details'),
             self.display_files,
             display_files,
         )
@@ -2085,16 +2218,17 @@ class CommitHistoryWidget(QtWidgets.QWidget):
         self._schedule_files()
 
     def display_files(self, enabled=None):
-        """Toggle the embedded commit file panel and reload the current selection."""
+        """Toggle the embedded commit details panel and reload the selection"""
         if enabled is None:
             enabled = self.display_files_action.isChecked()
-        self.filewidget.setVisible(bool(enabled))
+        self.details_splitter.setVisible(bool(enabled))
         if enabled and self.selection:
             self._schedule_files()
         else:
             self._files_timer.stop()
             self._files_dirty = False
             self.filewidget.clear()
+            self.descriptionwidget.clear()
 
     def _schedule_files(self):
         """Debounce a file list refresh keyed to the current selection."""
@@ -2116,6 +2250,12 @@ class CommitHistoryWidget(QtWidgets.QWidget):
             return
         self._files_dirty = False
         self.filewidget.commits_selected(self.selection)
+        # FileWidget arbeitet synchron - die Pfade stehen unmittelbar danach fest.
+        # Das ist eine zugesicherte Eigenschaft, siehe
+        # test_public_selection_reaches_all_standalone_consumers_synchronously.
+        self.descriptionwidget.set_commit(
+            self.selection[-1], self.filewidget.all_paths()
+        )
 
     def refresh_files(self):
         """Apply a selection that was skipped while the panel was hidden."""
@@ -2131,6 +2271,7 @@ class CommitHistoryWidget(QtWidgets.QWidget):
         self.old_selection = []
         self.treewidget.clear()
         self.filewidget.clear()
+        self.descriptionwidget.clear()
 
     def export_state(self):
         """Export history-child state independently of any main window."""
@@ -2143,6 +2284,7 @@ class CommitHistoryWidget(QtWidgets.QWidget):
             'display_status': self.display_status_action.isChecked(),
             'display_files': self.display_files_action.isChecked(),
             'files_sizes': get(self.files_splitter),
+            'details_sizes': get(self.details_splitter),
             'log': log_state,
         }
 
@@ -2173,6 +2315,15 @@ class CommitHistoryWidget(QtWidgets.QWidget):
             and all(
                 isinstance(size, int) and not isinstance(size, bool)
                 for size in files_sizes
+            )
+        ):
+            return False
+        details_sizes = state.get('details_sizes')
+        if details_sizes is not None and not (
+            isinstance(details_sizes, (list, tuple))
+            and all(
+                isinstance(size, int) and not isinstance(size, bool)
+                for size in details_sizes
             )
         ):
             return False
@@ -2213,6 +2364,9 @@ class CommitHistoryWidget(QtWidgets.QWidget):
             self.display_files_action.setChecked(display_files)
         if files_sizes:
             self.files_splitter.setSizes(list(files_sizes))
+        details_sizes = state.get('details_sizes')
+        if details_sizes:
+            self.details_splitter.setSizes(list(details_sizes))
         if log_state is not None:
             self.treewidget.apply_state(log_state)
         return True

@@ -18,6 +18,7 @@ from cola.widgets import standard
 from cola.widgets.dag import COMMIT_ROLE
 from cola.widgets.dag import GRAPH_PREV_ROW_ROLE
 from cola.widgets.dag import GRAPH_ROW_ROLE
+from cola.widgets.dag import CommitDescriptionWidget
 from cola.widgets.dag import CommitHistoryWidget
 from cola.widgets.dag import CommitTreeWidget
 from cola.widgets.dag import CommitTreeWidgetItem
@@ -28,6 +29,7 @@ from cola.widgets.dag import ReaderThread
 from cola.widgets.dag import _best_contrast
 from cola.widgets.dag import _HistoryCacheMetadata
 from cola.widgets.dag import _opaque_color
+from cola.widgets.dag import commit_message_file_spans
 from cola.widgets.dag import inline_graph_style
 from cola.widgets.main import MainView
 from qtpy import QtCore
@@ -213,6 +215,8 @@ def test_history_widget_owns_history_state_without_window_children(
         'treewidget',
         'filewidget',
         'files_splitter',
+        'details_splitter',
+        'descriptionwidget',
         'active_thread',
         'pending_request',
         'commit_list',
@@ -1457,8 +1461,10 @@ def test_history_widget_state_round_trips_canonically_between_children(
     # files_sizes is layout-dependent and excluded from this comparison.
     second_state = second.export_state()
     second_state.pop('files_sizes', None)
+    second_state.pop('details_sizes', None)
     expected = dict(state)
     expected.pop('files_sizes', None)
+    expected.pop('details_sizes', None)
     assert second_state == expected
     assert state['ref'] == 'topic -- path'
     assert state['count'] == 4321
@@ -3804,3 +3810,345 @@ def test_head_chip_widens_the_size_hint(qapp, app_context, managed_qobject):
     detached = tree.graph_delegate.sizeHint(option, index).width()
 
     assert detached > attached
+
+
+_SPAN_PATHS = ['cola/widgets/dag.py', 'cola/widgets/filelist.py', 'test/helper.py']
+
+
+@pytest.mark.parametrize(
+    ('scenario', 'text', 'expected'),
+    (
+        ('voller Pfad', 'touch cola/widgets/dag.py now', ['cola/widgets/dag.py']),
+        ('nur Dateiname', 'refactor dag.py a bit', ['dag.py']),
+        ('mittleres Suffix', 'see widgets/filelist.py', ['widgets/filelist.py']),
+        ('Satzende', 'all in dag.py.', ['dag.py']),
+        (
+            'laengster Treffer gewinnt',
+            'in cola/widgets/dag.py',
+            ['cola/widgets/dag.py'],
+        ),
+        ('kein Praefix-Teiltreffer', 'mydag.py untouched', []),
+        ('kein Suffix-Teiltreffer', 'dag.pyc is generated', []),
+        ('falsches Elternverzeichnis', 'src/dag.py elsewhere', []),
+        ('Gross-/Kleinschreibung', 'DAG.PY shouted', ['DAG.PY']),
+        ('zwei Erwaehnungen', 'dag.py and dag.py', ['dag.py', 'dag.py']),
+        ('nichts dabei', 'nothing here', []),
+        ('leerer Text', '', []),
+        (
+            'mehrzeilig',
+            'fix stuff\n\n- cola/widgets/dag.py\n- test/helper.py\n',
+            ['cola/widgets/dag.py', 'test/helper.py'],
+        ),
+    ),
+)
+def test_commit_message_file_spans_finds_mentioned_paths(scenario, text, expected):
+    """Der markierte Ausschnitt ist genau der Text, der die Datei benennt."""
+    spans = commit_message_file_spans(text, _SPAN_PATHS)
+
+    assert [text[start:end] for start, end, _path in spans] == expected, scenario
+
+
+def test_commit_message_file_spans_reports_the_changed_path():
+    """Zurueckgemeldet wird der echte Pfad, nicht der gefundene Ausschnitt."""
+    spans = commit_message_file_spans('see dag.py', _SPAN_PATHS)
+
+    assert [path for _start, _end, path in spans] == ['cola/widgets/dag.py']
+
+
+@pytest.mark.parametrize('paths', ([], [''], ['/']))
+def test_commit_message_file_spans_without_usable_paths(paths):
+    """Ohne brauchbare Pfade wird nichts markiert - und nichts geworfen."""
+    assert commit_message_file_spans('dag.py', paths) == []
+
+
+def test_commit_message_file_spans_are_sorted_and_disjoint():
+    """Die Bereiche kommen sortiert und ueberschneidungsfrei - der Highlighter
+    setzt sie in dieser Reihenfolge und darf sich nicht selbst ueberschreiben."""
+    text = 'cola/widgets/dag.py, dann test/helper.py, dann nochmal dag.py'
+
+    spans = commit_message_file_spans(text, _SPAN_PATHS)
+
+    assert len(spans) == 3
+    assert spans == sorted(spans)
+    assert all(
+        spans[index][1] <= spans[index + 1][0] for index in range(len(spans) - 1)
+    )
+
+
+def test_commit_message_file_spans_are_deterministic_for_equal_length_needles():
+    """Gleich lange Kandidaten duerfen die Reihenfolge nicht dem Zufall ueberlassen."""
+    first = commit_message_file_spans('a/b.py and c/b.py', ['x/a/b.py', 'y/c/b.py'])
+    second = commit_message_file_spans('a/b.py and c/b.py', ['y/c/b.py', 'x/a/b.py'])
+
+    assert first == second
+    assert [path for _start, _end, path in first] == ['x/a/b.py', 'y/c/b.py']
+
+
+def _description(app_context, managed_qobject):
+    return managed_qobject(CommitDescriptionWidget(app_context, None))
+
+
+def _formats(widget, block_number):
+    """Die Formate eines Blocks.
+
+    Ein QSyntaxHighlighter legt seine Formate als *additional formats* im Layout
+    ab; ueber QTextCursor.charFormat() sind sie nicht sichtbar (Falle F7).
+    """
+    block = widget.document().findBlockByNumber(block_number)
+    return [(rng.start, rng.length, rng.format) for rng in block.layout().formats()]
+
+
+def _message_commit(app_context, oid, message):
+    """Ein Commit-Stellvertreter, dessen Message ueber git.show geliefert wird."""
+    commit = dag.Commit(None, dag.CommitFactory(), oid=oid)
+    commit.summary = message.splitlines()[0]
+    commit.author = 'A U Thor'
+    commit.authdate = '2026-08-01'
+    app_context.git.show = lambda *args, **kwargs: (0, message, '')
+    return commit
+
+
+def test_description_shows_the_commit_message(qapp, app_context, managed_qobject):
+    """Angezeigt wird genau die Message - kein Kopf, keine Zusaetze."""
+    widget = _description(app_context, managed_qobject)
+    commit = _message_commit(app_context, 'a' * 40, 'subject line\n\nbody text')
+
+    widget.set_commit(commit, [])
+
+    assert widget.toPlainText() == 'subject line\n\nbody text'
+
+
+def test_description_wraps_long_lines(qapp, app_context, managed_qobject):
+    """Ohne Umbruch braeuchte man eine waagerechte Bildlaufleiste (Falle F1)."""
+    widget = _description(app_context, managed_qobject)
+
+    assert widget.lineWrapMode() == QtWidgets.QPlainTextEdit.WidgetWidth
+
+
+def test_description_is_read_only(qapp, app_context, managed_qobject):
+    widget = _description(app_context, managed_qobject)
+
+    assert widget.isReadOnly()
+
+
+def test_description_asks_git_for_the_message_body(qapp, app_context, managed_qobject):
+    """Genau ein "git show" ohne Patch, im Format %B."""
+    widget = _description(app_context, managed_qobject)
+    calls = []
+
+    def record(*args, **kwargs):
+        calls.append((args, kwargs))
+        return (0, 'subject', '')
+
+    app_context.git.show = record
+    commit = dag.Commit(None, dag.CommitFactory(), oid='b' * 40)
+
+    widget.set_commit(commit, [])
+
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args == ('b' * 40,)
+    assert kwargs['no_patch'] is True
+    assert kwargs['format'] == '%B'
+
+
+def test_description_marks_the_subject_line(qapp, app_context, managed_qobject):
+    """Die erste Zeile wird fett - sie ist die Ueberschrift des Commits."""
+    widget = _description(app_context, managed_qobject)
+    commit = _message_commit(app_context, 'a' * 40, 'subject line\n\nbody text')
+
+    widget.set_commit(commit, [])
+
+    subject = _formats(widget, 0)
+    assert [(start, length) for start, length, _fmt in subject] == [(0, 12)]
+    assert subject[0][2].fontWeight() == QtGui.QFont.Bold
+
+
+def test_description_marks_mentioned_files(qapp, app_context, managed_qobject):
+    """Erwaehnte Dateien bekommen die Chip-Farben des Inline-Graphen."""
+    widget = _description(app_context, managed_qobject)
+    commit = _message_commit(
+        app_context, 'a' * 40, 'subject\n\nsee cola/widgets/dag.py for details'
+    )
+    style = inline_graph_style(widget.palette())
+
+    widget.set_commit(commit, ['cola/widgets/dag.py'])
+
+    body = _formats(widget, 2)
+    assert [(start, length) for start, length, _fmt in body] == [(4, 19)]
+    assert body[0][2].background().color() == style.chip_other
+    assert body[0][2].foreground().color() == style.chip_text
+
+
+def test_description_leaves_unmentioned_files_alone(qapp, app_context, managed_qobject):
+    widget = _description(app_context, managed_qobject)
+    commit = _message_commit(app_context, 'a' * 40, 'subject\n\nnothing to see')
+
+    widget.set_commit(commit, ['cola/widgets/dag.py'])
+
+    assert _formats(widget, 2) == []
+
+
+@pytest.mark.parametrize('oid', (dag.STAGE, dag.WORKTREE))
+def test_description_is_empty_for_pseudo_commits(
+    qapp, app_context, managed_qobject, oid
+):
+    """WORKTREE und STAGE haben keine Message - und duerfen kein git aufrufen."""
+    widget = _description(app_context, managed_qobject)
+    calls = []
+    app_context.git.show = lambda *args, **kwargs: calls.append(args) or (0, '', '')
+    commit = dag.Commit(None, dag.CommitFactory(), oid=oid)
+
+    widget.set_commit(commit, [])
+
+    assert widget.toPlainText() == ''
+    assert calls == []
+
+
+def test_description_clears_without_a_commit(qapp, app_context, managed_qobject):
+    widget = _description(app_context, managed_qobject)
+    commit = _message_commit(app_context, 'a' * 40, 'subject\n\nbody')
+    widget.set_commit(commit, [])
+
+    widget.set_commit(None, [])
+
+    assert widget.toPlainText() == ''
+
+
+def test_description_survives_a_failed_git_call(qapp, app_context, managed_qobject):
+    """Ein fehlgeschlagenes git show leert das Feld, statt Muell anzuzeigen."""
+    widget = _description(app_context, managed_qobject)
+    app_context.git.show = lambda *args, **kwargs: (128, '', 'boom')
+    commit = dag.Commit(None, dag.CommitFactory(), oid='c' * 40)
+
+    widget.set_commit(commit, [])
+
+    assert widget.toPlainText() == ''
+
+
+def test_history_stacks_description_over_the_file_list(
+    qapp, app_context, managed_qobject
+):
+    """Rechts neben der Tabelle steht oben die Beschreibung, unten die Dateien."""
+    history = managed_qobject(CommitHistoryWidget(app_context))
+
+    assert history.files_splitter.indexOf(history.details_splitter) == 1
+    assert history.details_splitter.orientation() == QtCore.Qt.Vertical
+    assert history.details_splitter.indexOf(history.descriptionwidget) == 0
+    assert history.details_splitter.indexOf(history.filewidget) == 1
+
+
+def test_history_hides_and_shows_both_halves_together(
+    qapp, app_context, managed_qobject
+):
+    """Die vorhandene Aktion schaltet das ganze rechte Panel."""
+    history = managed_qobject(CommitHistoryWidget(app_context, display_files=True))
+
+    history.display_files(False)
+    assert not history.details_splitter.isVisible()
+
+    history.display_files(True)
+    assert history.details_splitter.isVisibleTo(history)
+
+
+def test_history_clear_empties_the_description(qapp, app_context, managed_qobject):
+    history = managed_qobject(CommitHistoryWidget(app_context))
+    history.descriptionwidget.setPlainText('leftover')
+
+    history.clear()
+
+    assert history.descriptionwidget.toPlainText() == ''
+
+
+def test_history_feeds_description_with_commit_and_paths(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """Die Beschreibung bekommt den juengsten Commit und die Pfade der Dateiliste."""
+    history = managed_qobject(CommitHistoryWidget(app_context, display_files=True))
+    received = []
+    monkeypatch.setattr(
+        history.descriptionwidget,
+        'set_commit',
+        lambda commit, paths: received.append((commit, list(paths))),
+    )
+    monkeypatch.setattr(history.filewidget, 'commits_selected', lambda commits: None)
+    monkeypatch.setattr(history.filewidget, 'all_paths', lambda: ['src/a.py'])
+    # Der Waechter in _load_pending_files fragt die Dateiliste, nicht den Splitter.
+    monkeypatch.setattr(history.filewidget, 'isVisible', lambda: True)
+    factory = dag.CommitFactory()
+    older = _commit(app_context, factory, 'older')
+    newer = _commit(app_context, factory, 'newer', (older,))
+    history.selection = [older, newer]
+
+    history._load_pending_files()
+
+    assert received == [(newer, ['src/a.py'])]
+
+
+def test_history_description_stays_empty_without_selection(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    history = managed_qobject(CommitHistoryWidget(app_context, display_files=True))
+    received = []
+    monkeypatch.setattr(
+        history.descriptionwidget,
+        'set_commit',
+        lambda commit, paths: received.append(commit),
+    )
+    history.selection = []
+
+    history._load_pending_files()
+
+    assert received == []
+
+
+def test_history_state_carries_the_details_sizes(qapp, app_context, managed_qobject):
+    """Die Hoehe der Beschreibung wird gespeichert."""
+    history = managed_qobject(CommitHistoryWidget(app_context))
+
+    state = history.export_state()
+
+    assert 'details_sizes' in state
+    assert state['details_sizes'] == history.details_splitter.sizes()
+
+
+def test_history_applies_stored_details_sizes(qapp, app_context, managed_qobject):
+    """Gespeicherte Groessen werden an den Splitter durchgereicht.
+
+    Geprueft wird der Aufruf, nicht das Ergebnis: ein nie gezeigter QSplitter
+    verteilt die Groessen selbst neu. Gemessen: nach setSizes([120, 240]) meldet
+    sizes() [159, 317] (Falle F13).
+    """
+    history = managed_qobject(CommitHistoryWidget(app_context))
+    applied = []
+    history.details_splitter.setSizes = lambda sizes: applied.append(list(sizes))
+    state = history.export_state()
+    state['details_sizes'] = [120, 240]
+
+    assert history.apply_state(state)
+    assert applied == [[120, 240]]
+
+
+@pytest.mark.parametrize('details_sizes', ('oops', [1, 'two'], [True, 2], {}))
+def test_history_rejects_malformed_details_sizes(
+    qapp, app_context, managed_qobject, details_sizes
+):
+    """Die Pruefung muss oberhalb des fruehen return fuer 'log' stehen (Falle F9)."""
+    history = managed_qobject(CommitHistoryWidget(app_context))
+    state = history.export_state()
+    state.pop('log', None)
+    state['details_sizes'] = details_sizes
+
+    assert not history.is_valid_state(state)
+
+
+def test_history_accepts_state_without_details_sizes(
+    qapp, app_context, managed_qobject
+):
+    """Ein vor diesem Feature gespeicherter Zustand bleibt gueltig."""
+    history = managed_qobject(CommitHistoryWidget(app_context))
+    state = history.export_state()
+    state.pop('details_sizes')
+
+    assert history.is_valid_state(state)
+    assert history.apply_state(state)

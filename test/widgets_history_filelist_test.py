@@ -220,3 +220,18 @@ def test_double_click_emits_a_copy_of_the_commits(qapp, app_context, managed_qob
     qapp.processEvents()
 
     assert received[0] is not widget.commits
+
+
+def test_all_paths_reports_every_listed_file(qapp, app_context, managed_qobject):
+    """Die Beschreibung braucht alle Pfade, nicht nur die markierten."""
+    widget = managed_qobject(FileWidget(app_context, None))
+
+    widget.list_files(['3\t1\tsrc/a.py', '0\t2\tsrc/b.py'])
+
+    assert widget.all_paths() == ['src/a.py', 'src/b.py']
+
+
+def test_all_paths_is_empty_without_files(qapp, app_context, managed_qobject):
+    widget = managed_qobject(FileWidget(app_context, None))
+
+    assert widget.all_paths() == []

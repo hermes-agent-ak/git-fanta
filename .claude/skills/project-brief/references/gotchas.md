@@ -78,6 +78,19 @@ special case.
 **The inline HEAD node cannot grow past an outer radius of 8 px.** The semantic paint test's
 tightest sample (`incoming_y`) sits 9 px from the node center and asserts `> node_guard`.
 
+
+**`MonoTextEdit` and `PlainTextEdit` start with `NoWrap`.** `BaseTextEditExtension` sets it
+(`cola/widgets/text.py:102`); the constructor's `line_wrap_mode` only takes effect through
+`set_word_wrapping(True)` (`:337`). A read-only text view that forgets this gets a horizontal
+scrollbar.
+
+**Hiding a parent `QSplitter` hides its children.** `child.isVisible()` becomes `False` - measured
+on the history's nested splitters. Visibility guards written against a child keep working when the
+parent becomes the thing that is toggled.
+
+**A `QSyntaxHighlighter`'s formats are invisible to `QTextCursor.charFormat()`.** They live as
+additional formats in the layout; read them with `block.layout().formats()`.
+
 ## Git output
 
 **`git show --raw` prints nothing for merge commits**, while `--numstat` still prints the combined

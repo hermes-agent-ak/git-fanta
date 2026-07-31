@@ -1,5 +1,12 @@
 ---
-status: open
+status: completed
+completed_at: 2026-07-31
+plan_commit: 6bff1f82
+implementation_branch: tree-ui/description-panel/minimax-M3
+implementation_head: 16bd7e3a
+ci_run: nicht ausgefuehrt (lokal gruen - garden check/fmt lokal gruen; check/pyupgrade und check/mypy sind in der Umgebung nicht verfuegbar gewesen)
+manual_verification: |
+  - In einer Headless-Umgebung nicht moeglich. Die Punkte 2 (Zeilenumbruch), 3 (Farbwirkung) und 8 (DAG-Fenster) sind nur durch Tests numerisch abgesichert, aber nicht angesehen worden.
 ---
 
 # Commit-Beschreibung über der Dateiliste, mit markierten Dateinamen
