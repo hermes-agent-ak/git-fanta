@@ -1007,6 +1007,83 @@ def _lane_colors(palette):
     return tuple(result)
 
 
+def readable_chip_fill(fill, backgrounds, floor=2.5):
+    """Return `fill`, lightened or darkened until it clears `floor` everywhere.
+
+    A chip is painted on a row whose background changes when the row is
+    selected, and the selected background is the palette highlight -- the very
+    color the local branch chip is mixed from. Mixing towards pure black or
+    pure white moves lightness only, so the three semantic chip hues stay
+    apart; contrast ratio cannot express that, being luminance-only.
+
+    The fill is returned untouched when it already clears the floor, so a
+    palette that is fine keeps exactly the colors it has today.
+    """
+    backgrounds = tuple(_opaque_color(color) for color in backgrounds)
+    if not backgrounds:
+        return fill
+    fill = _opaque_color(fill)
+
+    def worst_contrast(color):
+        return min(_color_contrast(color, background) for background in backgrounds)
+
+    if worst_contrast(fill) >= floor:
+        return fill
+    best = fill
+    best_contrast = worst_contrast(fill)
+    for target in (
+        QtGui.QColor.fromHsvF(0.0, 0.0, 0.0, 1.0),
+        QtGui.QColor.fromHsvF(0.0, 0.0, 1.0, 1.0),
+    ):
+        for step in range(1, 21):
+            candidate = _mix_color(fill, target, step / 20.0)
+            contrast = worst_contrast(candidate)
+            if contrast >= floor:
+                return candidate
+            if contrast > best_contrast:
+                best = candidate
+                best_contrast = contrast
+    return best
+
+
+def _shifted_value(color, offset):
+    """Return `color` with its HSV value moved by `offset`, clamped to [0, 1]"""
+    hue, saturation, value, _alpha = color.getHsvF()
+    return QtGui.QColor.fromHsvF(
+        hue if hue >= 0.0 else 0.0,
+        saturation,
+        min(1.0, max(0.0, value + offset)),
+        1.0,
+    )
+
+
+def readable_chip_fills(fills, background, floor=2.5):
+    """Make every fill readable on `background` and keep them distinct.
+
+    Nudging each fill on its own can land two of them on the same color when
+    the palette barely told them apart to begin with -- a greyscale theme does
+    exactly that. The inline graph paints three kinds of chip and they have to
+    stay tellable apart, so a collision is moved in lightness until it clears.
+
+    The search is bounded: six offsets, then the color is used as it is. That
+    cannot loop, and no measured palette needs more than one step.
+    """
+    background = _opaque_color(background)
+    result = []
+    for fill in fills:
+        candidate = readable_chip_fill(fill, (background,), floor)
+        if any(candidate.rgba() == taken.rgba() for taken in result):
+            for offset in (0.08, -0.08, 0.16, -0.16, 0.24, -0.24):
+                shifted = _shifted_value(candidate, offset)
+                if _color_contrast(shifted, background) >= floor and all(
+                    shifted.rgba() != taken.rgba() for taken in result
+                ):
+                    candidate = shifted
+                    break
+        result.append(candidate)
+    return tuple(result)
+
+
 def _distinct_chip_backgrounds(colors, palette_colors):
     """Return three semantic chip colors, expanding collapsed palette roles."""
     colors = tuple(_opaque_color(color) for color in colors)
@@ -1301,6 +1378,9 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
                 item,
                 style,
                 style.selected_text if selected else None,
+                option.palette.highlight().color()
+                if selected
+                else option.palette.base().color(),
             )
 
         text = index.data(Qt.DisplayRole)
@@ -1331,19 +1411,26 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         item: object | None,
         style: InlineGraphStyle | None = None,
         selected_text: QtGui.QColor | None = None,
+        row_background: QtGui.QColor | None = None,
     ):
         """Draw branch/tag labels and return total width used."""
         current_x = start_x
         x_offset = self.LABEL_TEXT_OFFSET
         y_offset = 0
 
+        chip_fills = None
+        if style is not None:
+            chip_fills = (style.chip_other, style.chip_remote, style.chip_head)
+            if row_background is not None:
+                chip_fills = readable_chip_fills(chip_fills, row_background)
+
         for i, (tag, display_text, condensed_text) in enumerate(self._row_labels(tags)):
             if painter is not None:
-                brush = style.chip_other
+                brush = chip_fills[0]
                 if tag == _HEAD_REF or tag.startswith(_TAGS_PREFIX):
-                    brush = style.chip_remote
+                    brush = chip_fills[1]
                 elif tag.startswith(_HEADS_PREFIX):
-                    brush = style.chip_head
+                    brush = chip_fills[2]
                 candidates = style.chip_text_candidates
                 if selected_text is not None:
                     candidates = (_opaque_color(selected_text),) + candidates

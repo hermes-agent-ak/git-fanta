@@ -27,10 +27,13 @@ from cola.widgets.dag import GitDAG
 from cola.widgets.dag import GraphDelegate
 from cola.widgets.dag import ReaderThread
 from cola.widgets.dag import _best_contrast
+from cola.widgets.dag import _color_contrast
 from cola.widgets.dag import _HistoryCacheMetadata
 from cola.widgets.dag import _opaque_color
 from cola.widgets.dag import commit_message_file_spans
 from cola.widgets.dag import inline_graph_style
+from cola.widgets.dag import readable_chip_fill
+from cola.widgets.dag import readable_chip_fills
 from cola.widgets.main import MainView
 from qtpy import QtCore
 from qtpy import QtGui
@@ -1217,6 +1220,7 @@ def test_draw_labels_makes_every_adversarial_chip_opaque_and_contrasting(
         QtGui.QFontMetrics(qapp.font()),
         None,
         style,
+        palette.highlight().color() if selected else palette.base().color(),
         selected_text,
     )
 
@@ -1272,11 +1276,14 @@ def test_selected_inline_summary_and_each_chip_have_contrasting_text(
 
     style = inline_graph_style(palette)
     assert painter.fills == [palette.highlight().color()]
-    assert [background for _pen, background in painter.rounded_styles] == [
-        style.chip_other,
-        style.chip_remote,
-        style.chip_head,
-    ]
+    expected_background = palette.highlight().color()
+    expected_chips = readable_chip_fills(
+        (style.chip_other, style.chip_remote, style.chip_head),
+        expected_background,
+    )
+    assert [background for _pen, background in painter.rounded_styles] == list(
+        expected_chips
+    )
     for pen, background in painter.rounded_styles:
         assert _contrast(pen, background) >= 4.5
     text_colors = dict(painter.text_colors)
@@ -4152,3 +4159,104 @@ def test_history_accepts_state_without_details_sizes(
 
     assert history.is_valid_state(state)
     assert history.apply_state(state)
+
+
+_CHIP_CONTRAST_FLOOR = 2.5
+
+
+def _demo_palette(base, alternate, text, highlight, highlighted_text):
+    palette = QtGui.QPalette()
+    palette.setColor(QtGui.QPalette.Base, QtGui.QColor(base))
+    palette.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor(alternate))
+    palette.setColor(QtGui.QPalette.Text, QtGui.QColor(text))
+    palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor(highlight))
+    palette.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor(highlighted_text))
+    return palette
+
+
+_DEMO_PALETTES = (
+    ('light', ('#ffffff', '#f2f2f2', '#101010', '#308cc6', '#ffffff')),
+    ('dark', ('#1e1e1e', '#252525', '#e8e8e8', '#2f6f9f', '#ffffff')),
+    ('solarized', ('#fdf6e3', '#eee8d5', '#657b83', '#268bd2', '#fdf6e3')),
+)
+
+
+@pytest.mark.parametrize(('name', 'colors'), _DEMO_PALETTES)
+def test_chip_fills_stay_readable_on_a_selected_row(qapp, name, colors):
+    """The reported bug: a chip must not vanish into the blue selected row."""
+    palette = _demo_palette(*colors)
+    style = inline_graph_style(palette)
+    selected = _opaque_color(palette.highlight().color())
+
+    for fill in (style.chip_other, style.chip_remote, style.chip_head):
+        readable = readable_chip_fill(fill, (selected,))
+        assert _color_contrast(readable, selected) >= _CHIP_CONTRAST_FLOOR, name
+
+
+@pytest.mark.parametrize(('name', 'colors'), _DEMO_PALETTES)
+def test_chip_fills_stay_readable_on_an_unselected_row(qapp, name, colors):
+    palette = _demo_palette(*colors)
+    style = inline_graph_style(palette)
+    base = _opaque_color(palette.base().color())
+
+    for fill in (style.chip_other, style.chip_remote, style.chip_head):
+        readable = readable_chip_fill(fill, (base,))
+        assert _color_contrast(readable, base) >= _CHIP_CONTRAST_FLOOR, name
+
+
+@pytest.mark.parametrize(('name', 'colors'), _DEMO_PALETTES)
+def test_chip_fills_keep_their_hues_apart(qapp, name, colors):
+    """Distinctness is a hue property - contrast ratio cannot see it (trap F4)."""
+    palette = _demo_palette(*colors)
+    style = inline_graph_style(palette)
+    selected = _opaque_color(palette.highlight().color())
+
+    hues = [
+        readable_chip_fill(fill, (selected,)).getHsvF()[0]
+        for fill in (style.chip_other, style.chip_remote, style.chip_head)
+    ]
+    # A grey reports hue -1.0; round the rest so float noise does not split
+    # two hues that are really the same.
+    distinct = {round(hue, 3) if hue >= 0.0 else -1.0 for hue in hues}
+
+    assert len(distinct) >= 2, name
+
+
+@pytest.mark.parametrize(
+    ('name', 'colors'),
+    _DEMO_PALETTES
+    + (('greyscale', ('#ffffff', '#eeeeee', '#000000', '#808080', '#ffffff')),),
+)
+def test_chip_fills_stay_three_distinct_colors(qapp, name, colors):
+    """Two chip kinds must never render in the same color (trap F13)."""
+    palette = _demo_palette(*colors)
+    style = inline_graph_style(palette)
+    fills = (style.chip_other, style.chip_remote, style.chip_head)
+
+    for background in (
+        _opaque_color(palette.highlight().color()),
+        _opaque_color(palette.base().color()),
+    ):
+        adapted = readable_chip_fills(fills, background)
+        assert len({color.rgba() for color in adapted}) == 3, name
+        for color in adapted:
+            assert _color_contrast(color, background) >= _CHIP_CONTRAST_FLOOR, name
+
+
+def test_readable_chip_fill_leaves_a_good_color_alone(qapp):
+    """No nudge when the fill already clears the floor - the design is kept."""
+    background = QtGui.QColor('#ffffff')
+    fill = QtGui.QColor('#404040')
+
+    assert readable_chip_fill(fill, (background,)) == fill
+
+
+def test_readable_chip_fill_preserves_the_hue(qapp):
+    """The nudge moves lightness, never hue."""
+    background = QtGui.QColor('#308cc6')
+    fill = QtGui.QColor('#62a8d4')
+
+    nudged = readable_chip_fill(fill, (background,))
+
+    assert nudged != fill
+    assert abs(nudged.getHsvF()[0] - fill.getHsvF()[0]) < 0.05
