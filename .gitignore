@@ -16,6 +16,7 @@
 /patches
 /pip-wheel-metadata
 /.pytest_cache
+/.sonar
 /README.html
 /share/locale
 /test/tmp
