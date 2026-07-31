@@ -228,6 +228,26 @@ anything.
 - **Binary files keep `-`.** `merge_numstat_rows()` refuses to invent a number for them, and a
   path that is binary in any one commit stays binary in the merged row.
 
+## 8. Bug fixes after the multi-select work
+
+Plan: `docs/plans/2026-07-31-history-bugfixes-1.md`.
+
+Four unrelated defects found by hand-testing the history view.
+
+**Decisions that later work must not undo:**
+
+- **The file diff window never diffs a range.** It asks `gitcmds.commit_touching_path()` which of
+  the selected commits last changed the path and diffs that single commit. A range renders empty
+  whenever the change cancels out inside it or the oldest selection is the root commit, which is
+  exactly what the union-based file list makes easy to hit.
+- **Chip fills are nudged, not redesigned.** `readable_chip_fill()` only moves lightness, only
+  when the fill fails a 2.5 contrast floor against the row it is painted on. Re-deriving the
+  chips from the row background was measured and is worse; a 3.0 floor flattens all three.
+- **A remote-only commit is checked out explicitly** with `-b <name> --track <remote>/<name>`.
+  Never with plain `git checkout <name>`.
+- **`MessageBox` sizes from `sizeHint()`**, floored at half `defs.dialog_w` so buttons stay
+  readable and capped at `defs.dialog_w` so nothing grows.
+
 ## Where the fork's tests live
 
 - `test/widgets_dag_history_test.py` — `CommitHistoryWidget`, `GitDAG`, state round-trips,

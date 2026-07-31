@@ -1,5 +1,12 @@
 ---
-status: open
+status: completed
+completed_at: 2026-07-31
+plan_commit: 39905f47
+implementation_branch: tree-ui/bugfixes-1/minimax-M3
+implementation_head: 02958207
+ci_run: nicht ausgefuehrt (lokal gruen - garden check/fmt lokal gruen; check/pyupgrade und check/mypy sind in der Umgebung nicht verfuegbar gewesen)
+manual_verification: |
+  - In einer Headless-Umgebung nicht moeglich. Punkte 1, 3 und 4 sind durch die Tests aus Tasks 1, 3 und 4 abgedeckt. Punkt 2 ist nicht angesehen worden - die Tests messen Kontrastzahlen, aber niemand hat das Ergebnis visuell verifiziert.
 ---
 
 # Four fixes: file diff over a multi-commit selection, chip colors, remote checkout, message box size

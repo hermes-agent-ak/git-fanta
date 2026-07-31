@@ -91,6 +91,19 @@ parent becomes the thing that is toggled.
 **A `QSyntaxHighlighter`'s formats are invisible to `QTextCursor.charFormat()`.** They live as
 additional formats in the layout; read them with `block.layout().formats()`.
 
+
+**The inline graph's chip color names are misleading.** `chip_head` paints **local** branches
+(`heads/…`), `chip_other` is the fallback that **remote** branches land in, and `chip_remote`
+paints `HEAD` and tags. See `cola/widgets/dag.py` where the brush is chosen.
+
+**Contrast ratio is luminance-only, so it cannot assert that two colors look different.** Forcing
+several fills to the same contrast floor against the same background necessarily puts them at the
+same luminance, which reads as "contrast 1.0" between them while they stay clearly different
+hues. Assert distinctness on hue.
+
+**`MessageBox` is shared by `confirm()`, `critical()` and `information()`.** A change to its size
+or position is felt in every dialog in the application.
+
 ## Git output
 
 **`git show --raw` prints nothing for merge commits**, while `--numstat` still prints the combined
@@ -125,6 +138,18 @@ carry `-` instead of a count in both fields.
 **`FileWidget.commits_selected` must not grow a git call per commit.**
 `test_public_selection_reaches_all_standalone_consumers_synchronously`
 (`test/widgets_dag_history_test.py`) monkeypatches `git.show` and asserts it ran exactly once.
+
+
+**`git rev-list --no-walk <oids> -- <path>` answers "which of these commits touched this file".**
+It does not walk ancestors, so a commit outside the list can never be the answer, and its default
+ordering is by commit date, newest first -- `--max-count=1` therefore yields the newest toucher.
+An empty result is exit status 0 with empty output, not an error. Beware when probing this in a
+script-built repository: commits made in the same second fall back to argument order and make the
+ordering look input-driven.
+
+**Plain `git checkout <name>` is not a safe way to materialise a remote branch.** It depends on
+`checkout.guess` being enabled, and when a local branch of the same name already exists elsewhere
+it silently checks that one out. Use `git checkout -b <name> --track <remote>/<name>`.
 
 ## Icons
 
