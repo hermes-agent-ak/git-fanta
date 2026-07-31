@@ -32,6 +32,7 @@ from cola.widgets.dag import _HistoryCacheMetadata
 from cola.widgets.dag import _opaque_color
 from cola.widgets.dag import commit_message_file_spans
 from cola.widgets.dag import inline_graph_style
+from cola.widgets.dag import merge_candidate
 from cola.widgets.dag import readable_chip_fill
 from cola.widgets.dag import readable_chip_fills
 from cola.widgets.main import MainView
@@ -4260,3 +4261,57 @@ def test_readable_chip_fill_preserves_the_hue(qapp):
 
     assert nudged != fill
     assert abs(nudged.getHsvF()[0] - fill.getHsvF()[0]) < 0.05
+
+
+def _candidate_commit(branches=(), tags=(), oid='a' * 40):
+    commit = dag.Commit(None, dag.CommitFactory(), oid=oid)
+    commit.branches = list(branches)
+    commit.tags = list(tags)
+    return commit
+
+
+@pytest.mark.parametrize(
+    ('scenario', 'branches', 'tags', 'expected'),
+    (
+        ('a local branch', ['feature'], ['heads/feature'], 'feature'),
+        ('the current branch is skipped', ['main'], ['heads/main'], ''),
+        (
+            'the first branch that is not current wins',
+            ['main', 'feature'],
+            ['heads/main', 'heads/feature'],
+            'feature',
+        ),
+        (
+            'a remote branch when there is no local one',
+            [],
+            ['remotes/origin/feature'],
+            'origin/feature',
+        ),
+        (
+            'a local branch beats a remote one',
+            ['feature'],
+            ['heads/feature', 'remotes/origin/other'],
+            'feature',
+        ),
+        ('a tag alone is not offered', [], ['tags/v1'], ''),
+        ('HEAD alone is not offered', [], ['HEAD'], ''),
+        ('nothing at all', [], [], ''),
+    ),
+)
+def test_merge_candidate_picks_one_ref(scenario, branches, tags, expected):
+    """One deterministic ref per row, local branches first."""
+    commit = _candidate_commit(branches, tags)
+
+    assert merge_candidate(commit, 'main') == expected, scenario
+
+
+@pytest.mark.parametrize('oid', (dag.STAGE, dag.WORKTREE))
+def test_merge_candidate_ignores_the_pseudo_commits(oid):
+    """STAGE and WORKTREE are not revisions and cannot be merged."""
+    commit = _candidate_commit(['feature'], ['heads/feature'], oid=oid)
+
+    assert merge_candidate(commit, 'main') == ''
+
+
+def test_merge_candidate_without_a_commit():
+    assert merge_candidate(None, 'main') == ''

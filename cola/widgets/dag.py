@@ -335,11 +335,7 @@ class ViewerMixin:
         if branches:
             guicmds.checkout_branch(context, default=branches[0])
             return
-        remote_branches = [
-            tag[len(_REMOTES_PREFIX) :]
-            for tag in commit.tags
-            if tag.startswith(_REMOTES_PREFIX)
-        ]
+        remote_branches = remote_branch_labels(commit)
         if len(remote_branches) == 1:
             # "git checkout <name>" would do this too, but only when
             # checkout.guess is on, and it silently checks out an unrelated
@@ -776,6 +772,42 @@ _REMOTES_PREFIX = 'remotes/'
 _TAGS_PREFIX = 'tags/'
 _HEADS_PREFIX = 'heads/'
 _HEAD_REF = 'HEAD'
+
+
+def remote_branch_labels(commit):
+    """Return the '<remote>/<branch>' labels a commit carries.
+
+    "git log --decorate" hands them over as 'remotes/<remote>/<branch>'; see
+    Commit.add_label in cola/models/dag.py. Reading them is needed in two
+    places -- the double-click checkout and the merge menu -- so the rule for
+    it lives in one.
+    """
+    return [
+        tag[len(_REMOTES_PREFIX) :]
+        for tag in commit.tags
+        if tag.startswith(_REMOTES_PREFIX)
+    ]
+
+
+def merge_candidate(commit, current_branch):
+    """Return the ref of `commit` to offer for merging, or ''.
+
+    A row can carry several refs and they all point at the same commit, so any
+    of them merges to the identical result. Local branches come first because
+    that is the name the user thinks in, then remote branches. The order is
+    fixed so the same row never offers two different things.
+
+    Tags are deliberately not offered: the menu entry is about branches.
+    """
+    if commit is None or commit.oid in (dag.STAGE, dag.WORKTREE):
+        return ''
+    for branch in commit.branches:
+        if branch != current_branch:
+            return branch
+    remote_branches = remote_branch_labels(commit)
+    if remote_branches:
+        return remote_branches[0]
+    return ''
 
 
 class RefType(enum.Enum):
