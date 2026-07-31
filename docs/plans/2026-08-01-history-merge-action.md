@@ -104,7 +104,7 @@ merges. The other two merge entry points are:
 ### 2.2 The dialog accepts a `ref` but preselects it weakly
 
 `Merge.__init__(context, parent=None, ref=None)` already does `self.revision.set_value(ref)`
-(`cola/widgets/merge.py:40-41`). Measured with a real repository, that is not enough:
+(`cola/widgets/merge.py:41-42`). Measured with a real repository, that is not enough:
 
 | ref | revision field | radio | list shows | list selection |
 |---|---|---|---|---|
@@ -115,7 +115,7 @@ Two things go wrong. The preselected ref is **never highlighted** in the list, a
 that is not a local branch the radio button stays on *Local*, so the list shows a completely
 different kind of ref. And it is fragile: measured, clicking any row of that list **overwrites**
 the field — `v1` became `ahead` on the first stray click, because `revision_selected` writes the
-list item back into the field (`cola/widgets/merge.py:193-199`).
+list item back into the field (`cola/widgets/merge.py:191-197`).
 
 That is the "nothing may go wrong with the preselection" requirement, and it needs the radio, the
 list selection and the field to agree. Measured with the fix from Task 3:
@@ -170,7 +170,7 @@ right kind, so a stray click can no longer jump to an unrelated one.
 | **F7** | **`cola/widgets/dag.py` does not import `gitcmds` or `merge`.** Both are needed. `cola/widgets/merge.py` imports neither `dag` nor `gitcmds`, so neither import is a cycle. | `grep -c "^from \\.\\. import gitcmds$" cola/widgets/dag.py` → `0`; `grep -n import cola/widgets/merge.py` shows no `dag` |
 | **F8** | **`local_merge` has two callers and one of them passes the function itself, not a call.** `cola/widgets/main.py:394` uses `partial(merge.local_merge, context)` and `cola/widgets/toolbarcmds.py:112` stores `merge.local_merge` as a value. A new parameter must therefore be **last and optional**, or both break. | `grep -rn "local_merge" cola/` |
 | **F9** | **`Merge.__init__` calls `update_all()` near the end**, which calls `update_revisions()` and rebuilds the list. Preselection must happen **after** that call, otherwise the list selection is wiped. The revision *field* survives either way — `update_revisions` only touches the list. | `cola/widgets/merge.py:143-148`; measured: a later `model.updated` does not clear the field |
-| **F10** | **Selecting a list item writes it into the revision field.** `revision_selected` is connected to `itemSelectionChanged`. Any preselection must therefore set the field **last**, after selecting the item, or the item wins. | `cola/widgets/merge.py:136`, `:193-199`; measured: `v1` became `ahead` after one stray click |
+| **F10** | **Selecting a list item writes it into the revision field.** `revision_selected` is connected to `itemSelectionChanged`. Any preselection must therefore set the field **last**, after selecting the item, or the item wins. | `cola/widgets/merge.py:136`, `:191-197`; measured: `v1` became `ahead` after one stray click |
 | **F11** | **`commit.tags` carries prefixed refs.** A local branch appears both in `commit.branches` (bare) and in `commit.tags` as `heads/<name>`; remote branches appear as `remotes/<remote>/<name>`, tags as `tags/<name>`, and `HEAD` appears bare. `refs/remotes/origin/HEAD` is dropped by `add_label`. | `cola/models/dag.py:192-238`; measured tags for a clone: `['HEAD', 'heads/main', 'remotes/origin/main']` |
 | **F13** | **`update_menu_actions` overwrites `self.clicked` from the event position.** Its first lines do `item = self.itemAt(event.pos())` and then set `self.clicked` from it. A test that assigns `tree.clicked` and *then* calls `update_menu_actions` has its assignment silently thrown away and sees every action disabled. Patch `itemAt` instead. The handler `merge_branch()` reads `self.clicked` directly and *is* set that way in a test. | Measured: presetting `tree.clicked` then calling `update_menu_actions(QPoint(-1, -1))` left the action disabled; patching `itemAt` to report a row produced `Merge "ahead" into "main"`, enabled |
 | **F12** | **`pytest.ini` sets `--doctest-modules`.** A `>>>` in a new docstring becomes a test. | `pytest.ini:3` |
@@ -184,9 +184,10 @@ right kind, so a stray click can no longer jump to an unrelated one.
 | `cmds.Merge` | run by `merge_revision` | **Is** the merge. Untouched. |
 | `viewer_actions(widget, proxy)` | `cola/widgets/dag.py:548` | **Is** the action factory. The new action is one more entry in its dict. |
 | `ViewerMixin.checkout_branch` | `cola/widgets/dag.py:217` | **Template** for the new handler: reads `self.clicked`, falls back to the selection, returns early when there is nothing. |
-| `_REMOTES_PREFIX`, `_TAGS_PREFIX`, `_HEADS_PREFIX` | `cola/widgets/dag.py:755-757` | The ref prefixes. No new constants. |
+| `_REMOTES_PREFIX`, `_TAGS_PREFIX`, `_HEADS_PREFIX` | `cola/widgets/dag.py:775-778` | The ref prefixes. No new constants. |
+| The remote-label comprehension inside `checkout_commit` | `cola/widgets/dag.py:217` ff. | **Already exists** and is folded into `remote_branch_labels()` in step 2.3 rather than copied. |
 | `app_context` fixture | `test/helper.py:85` | Real temporary git repository for every test here. |
-| `qapp`, `managed_qobject`, `_tree`, `_fake_commit` | `test/widgets_history_checkout_test.py:24`, `:35`, `:90`, `:72` | **Already in the file** Task 4 extends. `_fake_commit(oid, branches=(), tags=())` is exactly the stand-in the candidate logic needs. |
+| `qapp`, `managed_qobject`, `_tree`, `_fake_commit` | `test/widgets_history_checkout_test.py:27`, `:38`, `:92`, `:74` | **Already in the file** Task 4 extends. `_fake_commit(oid, branches=(), tags=())` is exactly the stand-in the candidate logic needs. |
 | `test/gitcmds_test.py` | whole file | Where Task 1's tests go; it already imports `gitcmds`, `helper` and `app_context`. |
 
 ---
@@ -481,6 +482,21 @@ Insert **two lines below `_HEAD_REF`** (leave one blank line, then two, as the m
 top-level definitions):
 
 ```python
+def remote_branch_labels(commit):
+    """Return the '<remote>/<branch>' labels a commit carries.
+
+    "git log --decorate" hands them over as 'remotes/<remote>/<branch>'; see
+    Commit.add_label in cola/models/dag.py. Reading them is needed in two
+    places -- the double-click checkout and the merge menu -- so the rule for
+    it lives in one.
+    """
+    return [
+        tag[len(_REMOTES_PREFIX) :]
+        for tag in commit.tags
+        if tag.startswith(_REMOTES_PREFIX)
+    ]
+
+
 def merge_candidate(commit, current_branch):
     """Return the ref of `commit` to offer for merging, or ''.
 
@@ -496,14 +512,46 @@ def merge_candidate(commit, current_branch):
     for branch in commit.branches:
         if branch != current_branch:
             return branch
-    for tag in commit.tags:
-        if tag.startswith(_REMOTES_PREFIX):
-            return tag[len(_REMOTES_PREFIX) :]
+    remote_branches = remote_branch_labels(commit)
+    if remote_branches:
+        return remote_branches[0]
     return ''
 ```
 
 > **No new constants** — `_REMOTES_PREFIX` is already there (trap **F11** explains the shapes in
 > `commit.tags`).
+
+### Step 2.3 (GREEN) — Fold the existing copy of that rule into the new helper
+
+`checkout_commit` already reads the same labels, inline. Two copies of one rule drift; this is a
+pure extraction and changes no behaviour.
+
+**Anchor:**
+
+```bash
+grep -n "        remote_branches = \[" -A 4 cola/widgets/dag.py
+```
+
+**Expected:** exactly **one** hit, inside `checkout_commit`, five lines long. Replace those five
+lines
+
+```python
+        remote_branches = [
+            tag[len(_REMOTES_PREFIX) :]
+            for tag in commit.tags
+            if tag.startswith(_REMOTES_PREFIX)
+        ]
+```
+
+with
+
+```python
+        remote_branches = remote_branch_labels(commit)
+```
+
+> The checkout tests in `test/widgets_history_checkout_test.py` cover this path already and must
+> stay green without being touched. If any of them turns red, the extraction was not pure:
+> **stop and report.**
 
 ### Verification
 
@@ -524,7 +572,11 @@ git add -A && git commit -m "feat: pick one merge candidate ref per history row
 merge_candidate() prefers a local branch that is not the current one, then a
 remote branch. Every ref at a commit merges identically, so the choice only
 decides the wording -- but it is fixed, so one row never offers two different
-things. STAGE and WORKTREE are not revisions and yield nothing."
+things. STAGE and WORKTREE are not revisions and yield nothing.
+
+Reading the remote labels out of Commit.tags moved into
+remote_branch_labels(), which checkout_commit() now calls too. It had its own
+copy of the same comprehension, and two copies of one rule drift."
 ```
 
 ---
@@ -847,6 +899,10 @@ dialog on the right branch.
 The history menu's action set is asserted **exactly** (trap **F3**). Update it first, so the RED
 in step 4.2 is about the new behaviour and not about a count.
 
+> **This step deliberately leaves those tests red until step 4.3 adds the action.** That is the
+> one place in this plan where the suite is red *between* steps. The rule "green after every
+> task" still holds — Task 4 is one commit, and it ends green. Do not stop here.
+
 ```bash
 grep -n "^VIEWER_ACTION_KEYS = {" -A 26 test/widgets_main_history_test.py
 ```
@@ -858,15 +914,16 @@ Insert `'merge_branch',` into that set, alphabetically — between `'diff_this_s
     'merge_branch',
 ```
 
-Then the two counts:
+Then the counts. They live in **two** files, not one:
 
 ```bash
-grep -n "== 24" test/widgets_main_history_test.py
+grep -rn "== 24" test/
 ```
 
-**Expected:** exactly **two** hits, both in
-`test_mainview_history_context_actions_are_composed_once_and_disable_off_item`. Change both `24`
-to `25`.
+**Expected:** exactly **four** hits — two in `test/widgets_main_history_test.py` (inside
+`test_mainview_history_context_actions_are_composed_once_and_disable_off_item`) and two in
+`test/widgets_dag_history_test.py`. Change **all four** `24` to `25`. If the count is not four:
+**stop and report.**
 
 > Do **not** add the key to `UNSUPPORTED_MAIN_VIEWER_ACTION_KEYS`: the action is supported in the
 > main window and the test asserts that everything outside that set is visible.
