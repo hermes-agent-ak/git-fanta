@@ -3626,9 +3626,7 @@ def test_current_branch_chip_is_starred_and_bordered(
     assert marked > plain
 
 
-def test_chips_stay_plain_without_a_current_branch(
-    qapp, app_context, managed_qobject
-):
+def test_chips_stay_plain_without_a_current_branch(qapp, app_context, managed_qobject):
     """Ohne bekannten aktuellen Branch bleibt jeder Chip unmarkiert."""
     palette = _palette('#f4f5f7', '#202124', '#ffffff', '#edf0f4', '#3268b2', '#ffffff')
     factory = dag.CommitFactory()
@@ -3642,9 +3640,7 @@ def test_chips_stay_plain_without_a_current_branch(
     assert len(set(painter.rounded_widths)) == 1
 
 
-def test_detached_head_marks_no_branch_as_current(
-    qapp, app_context, managed_qobject
-):
+def test_detached_head_marks_no_branch_as_current(qapp, app_context, managed_qobject):
     """gitcmds.current_branch() liefert bei abgeloestem HEAD den String 'HEAD'.
 
     Git verbietet einen Branch namens HEAD, also passt 'heads/HEAD' auf keinen Ref

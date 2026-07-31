@@ -1106,7 +1106,6 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         """Is this chip the place HEAD currently points at?"""
         return ref == _HEAD_REF or self._is_current_branch_ref(ref)
 
-
     def _row_labels(self, tags: list[str]) -> list[tuple[str, str, str | None]]:
         """_prepare_labels() with the current position marked.
 
