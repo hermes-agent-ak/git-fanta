@@ -286,6 +286,42 @@ class FileTreeWidgetItem(QtWidgets.QTreeWidgetItem):
             self.setToolTip(0, '')
 
 
+def _add_count(total, field):
+    """Add one numstat field to a running total.
+
+    Returns None as soon as a field is not a plain number: git writes '-'
+    instead of a count for binary files, and a total that mixes counted and
+    uncounted changes has no meaningful number to report.
+    """
+    if total is None or not field.isdigit():
+        return None
+    return total + int(field)
+
+
+def merge_numstat_rows(rows):
+    """Combine numstat rows so that every path is listed exactly once.
+
+    Rows arrive as ``adds\tdels\tpath``, one per path *per commit*. A path
+    that several selected commits touch is reported once, with its added and
+    deleted lines summed; its first appearance decides where it sits in the
+    list. A binary file keeps the '-' that git writes instead of a count.
+    """
+    totals = {}
+    for row in rows:
+        fields = row.split('\t')
+        if len(fields) < 3:
+            continue
+        path = fields[2]
+        adds, dels = totals.get(path, (0, 0))
+        totals[path] = (_add_count(adds, fields[0]), _add_count(dels, fields[1]))
+    return [
+        '{}\t{}\t{}'.format(
+            '-' if adds is None else adds, '-' if dels is None else dels, path
+        )
+        for path, (adds, dels) in totals.items()
+    ]
+
+
 def parse_status_and_numstat(output, separator):
     """Parse the combined output of "git ... --raw --numstat".
 

@@ -9,6 +9,7 @@ import pytest
 from cola import icons
 from cola.widgets.filelist import FileTreeWidgetItem
 from cola.widgets.filelist import FileWidget
+from cola.widgets.filelist import merge_numstat_rows
 from cola.widgets.filelist import parse_status_and_numstat
 from qtpy import QtCore
 from qtpy import QtWidgets
@@ -235,3 +236,35 @@ def test_all_paths_is_empty_without_files(qapp, app_context, managed_qobject):
     widget = managed_qobject(FileWidget(app_context, None))
 
     assert widget.all_paths() == []
+
+
+@pytest.mark.parametrize(
+    ('scenario', 'rows', 'expected'),
+    (
+        ('nothing at all', [], []),
+        ('a single row', ['1\t0\ta.py'], ['1\t0\ta.py']),
+        (
+            'two files stay two rows',
+            ['1\t0\ta.py', '2\t3\tb.py'],
+            ['1\t0\ta.py', '2\t3\tb.py'],
+        ),
+        ('the same file is summed', ['1\t0\ta.py', '2\t3\ta.py'], ['3\t3\ta.py']),
+        (
+            'the order of first appearance wins',
+            ['1\t0\tb.py', '1\t0\ta.py', '1\t0\tb.py'],
+            ['2\t0\tb.py', '1\t0\ta.py'],
+        ),
+        ('binary stays binary', ['-\t-\tb.bin'], ['-\t-\tb.bin']),
+        ('binary is contagious', ['1\t0\tb.bin', '-\t-\tb.bin'], ['-\t-\tb.bin']),
+        (
+            'binary first is just as contagious',
+            ['-\t-\tb.bin', '1\t0\tb.bin'],
+            ['-\t-\tb.bin'],
+        ),
+        ('an incomplete row is dropped', ['1\t0'], []),
+        ('an empty row is dropped', [''], []),
+    ),
+)
+def test_merge_numstat_rows_lists_every_path_once(scenario, rows, expected):
+    """One row per path, counts summed, binary files left alone."""
+    assert merge_numstat_rows(rows) == expected
