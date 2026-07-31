@@ -155,12 +155,12 @@ all you see is an empty panel.
 `docs/plans/2026-08-01-commit-description-panel.md` runs in parallel. The boundary:
 
 - **This plan changes the file list, that one changes the text field above it.** The rule "on a
-  multi-commit selection the description shows the newest commit" is already settled there (its §1:
-  "Mehrere Commits ausgewählt? → **jüngsten** (`selection[-1]`)") and wired up in its Task 4,
-  anchor 4. **Nothing to do here for that.**
+  multi-commit selection the description shows the newest commit, `selection[-1]`" is already
+  settled there — its §1 decision table, wired up in its Task 4, anchor 4. **Nothing to do here
+  for that.** (That plan is still written in German; it predates the English rule.)
 - **Trap F8 of that plan becomes moot through this one.** It describes exactly this
-  `UnboundLocalError` and says "wird separat behoben, nicht hier" — this is that separate fix.
-  That plan re-checks the spot itself before its Task 4. Task 3 here updates the note.
+  `UnboundLocalError` and defers the fix to a separate plan — this is that plan. That plan
+  re-checks the spot itself before its Task 4. Task 3 here updates the note.
 - **A side effect that should be known there:** after this plan `all_paths()` returns the paths of
   **all** selected commits, while the description shows only the newest commit's message. A
   filename in that message can therefore be highlighted even though a *different* selected commit
@@ -1006,13 +1006,12 @@ head -3 docs/plans/2026-08-01-commit-description-panel.md
 If it says `status: open`, append to the end of its F8 row:
 
 ```markdown
-**Erledigt durch `docs/plans/2026-07-31-history-multi-commit-file-list.md`.** Die Integrationstests jenes Plans dürfen ab jetzt mehrere Commits auswählen; die Beschreibung zeigt weiterhin `selection[-1]`.
+**Fixed by `docs/plans/2026-07-31-history-multi-commit-file-list.md`.** That plan's integration tests may select several commits from now on; the description still shows `selection[-1]`.
 ```
 
-> That sentence is German on purpose: it is inserted into a German table row in a plan written
-> before the English rule, and a single English cell in a German table would read worse than the
-> rest. It is the **only** German text this plan writes. Everything else — code, comments,
-> docstrings, commit messages, documentation — is English.
+> The surrounding table is German because that plan predates the English rule. Write the new
+> sentence in **English** anyway — new material is English even inside an old German document.
+> Matching the surrounding language is what the rule exists to stop.
 
 If it is already `status: completed`, **change nothing** — completed plans are reference material
 and are not rewritten (`docs/plans/README.md`).
