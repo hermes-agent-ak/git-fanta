@@ -24,6 +24,9 @@ decisions of your own**.
   order only keeps the suite green after every step.
 - **One task = one commit.** The commit message is written out verbatim at the end of each task.
   Use it as it stands.
+- **Commit only. Never push.** No task in this plan runs `git push`, and none should. The branch
+  stays local; whoever reviews the work decides when it leaves the machine. Do not create a pull
+  request either.
 - **Every task has RED → GREEN → VERIFICATION.** Where a RED step names an expected error, the
   actual output must match it. If it does not: **stop and report**, do not continue.
 - **Line numbers are orientation, not truth.** Every edit is preceded by a `grep` that finds the
@@ -137,26 +140,30 @@ Two candidate fixes were measured and **rejected**:
 - Forcing every chip to clear **3.0** against both row states pushes all three to the same
   luminance.
 
-The accepted fix nudges each fill only as far as needed to clear a **2.5** floor against the
-unselected *and* the selected row background. Measured result:
+The accepted fix nudges each fill only as far as needed to clear a **2.5** floor against the row
+background it is actually painted on — one background, the one for the current row state, not both
+at once. Measured with the implementation from Task 2 in place:
 
-| Palette | remote | HEAD/tags | local |
-|---|---|---|---|
-| light | `#f6f6f6` → `#3d3d3d` | `#a8cbe1` → `#3b474f` | `#62a8d4` → `#274355` |
-| dark | `#232323` → `#b2b2b2` | `#294153` → `#a9b3ba` | `#2b5c80` → `#a0b5c6` |
+| Palette / row state | remote | HEAD/tags | local | worst contrast |
+|---|---|---|---|---|
+| light, selected | `#f6f6f6` (kept) | `#a8cbe1` → `#3b474f` | `#62a8d4` → `#274355` | 2.58 |
+| light, unselected | `#f6f6f6` → `#a0a0a0` | `#a8cbe1` → `#87a3b4` | `#62a8d4` (kept) | 2.61 |
+| dark, selected | `#232323` (kept) | `#294153` → `#1d2e3a` | `#2b5c80` → `#152e40` | 2.60 |
+| dark, unselected | `#232323` → `#656565` | `#294153` → `#546776` | `#2b5c80` → `#366486` | 2.63 |
+| solarized, selected | `#f2ecd9` (kept) | → `#39454a` | → `#284a60` | 2.54 |
+| greyscale, unselected | → `#9e9e9e` | → `#9d9d9d` | → `#8a8a8a` | 2.69 |
 
-Measured with the implementation from Task 2 in place, the worst fill contrast per palette is:
+> "(kept)" is the point of the design: a fill that already clears the floor on that row state is
+> returned untouched, so the palette keeps exactly the color it has today wherever it is fine.
 
-| Palette | on the selected row | on the unselected row | distinct hues left |
-|---|---|---|---|
-| light | 2.58 | 2.61 | 2 of 3 |
-| dark | 2.60 | 2.63 | 2 of 3 |
-| solarized | 2.54 | 2.51 | 3 of 3 |
-
-> Two of three hues surviving is expected and acceptable: in a palette whose base and highlight
-> are both near-neutral, two chips legitimately land on the same hue and are told apart by
-> lightness. All three collapsing would mean the semantics are gone — that is what the test
-> asserts against.
+**The three chips must stay distinct, and a naive per-chip nudge does not guarantee that.**
+Measured on a greyscale palette, nudging each fill on its own produced
+`['#9e9e9e', '#9d9d9d', '#9e9e9e']` — two chip kinds rendered in *the same* color. The repository
+already asserts the opposite in
+`test_draw_labels_makes_every_adversarial_chip_opaque_and_contrasting`
+(`test/widgets_dag_history_test.py:1203`), which requires three distinct brushes over adversarial
+palettes. The fix therefore adapts the three fills **together** and separates a collision — see
+trap **F13**.
 
 > **The three stay distinguishable.** Their *contrast ratio* to one another drops to ~1.0, but
 > contrast ratio is luminance-only; equal luminance is exactly what the floor forces. Mixing
@@ -236,6 +243,8 @@ positions the dialog, so the window manager places it.
 | **F9** | **`cmds.do(cls, *args, **opts)` forwards keyword arguments**, so `checkout_branch=True` can be passed through it. | `cola/cmds.py:3587-3593` |
 | **F10** | **`_REMOTES_PREFIX = 'remotes/'` already exists** at `cola/widgets/dag.py:755`. Do not add a second constant. | `grep -n "_REMOTES_PREFIX" cola/widgets/dag.py` |
 | **F11** | **`pytest.ini` sets `--doctest-modules`.** A `>>>` in a new docstring becomes a test; a `\t` is a real tab. | `pytest.ini:3` |
+| **F13** | **Nudging the three chip fills one at a time can make two of them identical.** Measured on a greyscale palette (`base #ffffff`, `highlight #808080`): per-chip nudging gave `['#9e9e9e', '#9d9d9d', '#9e9e9e']` — the remote chip and the local chip in the same color. `test_draw_labels_makes_every_adversarial_chip_opaque_and_contrasting` (`test/widgets_dag_history_test.py:1203`) already asserts three distinct brushes over adversarial palettes. Adapt the three **together** and separate a collision. | Measured per-chip: 2 distinct rgba on greyscale/unselected. Measured with `readable_chip_fills`: 3 distinct rgba on all of light, dark, solarized, greyscale and an all-black palette |
+| **F14** | **`_draw_labels` has four call sites, three of them in tests** (`test/widgets_dag_history_test.py:1160`, `:1212`, `:3603`, `:3688`) and they pass 7 or 8 positional arguments. `row_background` must therefore be the **last** parameter and must have a default, or every one of them breaks. | `grep -rn "_draw_labels" cola/ test/`; the 8-argument call is `:1212`, the rest pass 7 |
 | **F12** | **`cola/widgets/filelist.py` and `cola/widgets/dag.py` carry no type annotations in the code touched here.** New helpers follow the surrounding module: `cola/gitcmds.py` **does** annotate, `cola/widgets/dag.py` annotates only in places. Match the immediate neighbours of the anchor, do not introduce `X \| None` where the file has no `from __future__ import annotations`. | `grep -n "from __future__" cola/gitcmds.py cola/widgets/dag.py cola/widgets/diff.py cola/widgets/standard.py` |
 
 ## 5. What already exists and is reused (do not rebuild)
@@ -532,7 +541,46 @@ AssertionError: assert [] == [('aaaa…', {'filename': 'src/a.py'})]
 
 If the characterization test is red, or any of the other four is green: **stop and report.**
 
-### Step 1.4 (GREEN) — Use the touching commit
+### Step 1.4 (RED, expected) — Retire the test that pins the old behaviour
+
+`test/widgets_commit_file_diff_test.py:109` is called
+`test_set_commit_file_uses_a_range_for_multiple_commits` and asserts
+`isinstance(task, DiffRangeTask)`. Its **name is the old contract**, and this task deliberately
+removes it. It is replaced, not deleted — the new name states the new contract.
+
+**Anchor:**
+
+```bash
+grep -n "def test_set_commit_file_uses_a_range_for_multiple_commits" -A 12 test/widgets_commit_file_diff_test.py
+```
+
+**Expected:** exactly **one** hit. Replace that whole function — its `def` line down to and
+including `assert task.filename == 'src/a.py'` — with:
+
+```python
+def test_set_commit_file_diffs_one_commit_for_multiple_commits(
+    qapp, app_context, managed_qobject
+):
+    """A range hides a file whose change cancels out inside it."""
+    window = _window(app_context, managed_qobject)
+    app_context.git.rev_list = lambda *args, **kwargs: (0, 'a' * 40 + '\n', '')
+    first = _fake_commit('a' * 40)
+    last = _fake_commit('b' * 40)
+
+    window.set_commit_file([first, last], 'src/a.py')
+
+    task = _last_task(app_context)
+    assert isinstance(task, DiffInfoTask)
+    assert task.filename == 'src/a.py'
+```
+
+> `DiffInfoTask` is what `set_diff_oid` starts (`cola/widgets/diff.py:2074`) and is **already
+> imported** by that test file. If `DiffRangeTask` becomes unused there, leave the import alone —
+> other tests in the file still use it. Check with
+> `grep -c DiffRangeTask test/widgets_commit_file_diff_test.py`; if the count is 1 after your
+> edit, remove the import line too, otherwise keep it.
+
+### Step 1.5 (GREEN) — Use the touching commit
 
 **Anchor 1 — the import.**
 
@@ -627,7 +675,7 @@ QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p no:ruff -q cola test 2>&1 | tail -3
 ```
 
-**Expected:** baseline + 11 passed, 0 failed.
+**Expected:** baseline + 11 passed, 0 failed. The replaced test keeps the count unchanged — one test was renamed, not added.
 
 ### Commit
 
@@ -720,6 +768,27 @@ def test_chip_fills_keep_their_hues_apart(qapp, name, colors):
     assert len(distinct) >= 2, name
 
 
+@pytest.mark.parametrize(
+    ('name', 'colors'),
+    _DEMO_PALETTES
+    + (('greyscale', ('#ffffff', '#eeeeee', '#000000', '#808080', '#ffffff')),),
+)
+def test_chip_fills_stay_three_distinct_colors(qapp, name, colors):
+    """Two chip kinds must never render in the same color (trap F13)."""
+    palette = _demo_palette(*colors)
+    style = inline_graph_style(palette)
+    fills = (style.chip_other, style.chip_remote, style.chip_head)
+
+    for background in (
+        _opaque_color(palette.highlight().color()),
+        _opaque_color(palette.base().color()),
+    ):
+        adapted = readable_chip_fills(fills, background)
+        assert len({color.rgba() for color in adapted}) == 3, name
+        for color in adapted:
+            assert _color_contrast(color, background) >= _CHIP_CONTRAST_FLOOR, name
+
+
 def test_readable_chip_fill_leaves_a_good_color_alone(qapp):
     """No nudge when the fill already clears the floor - the design is kept."""
     background = QtGui.QColor('#ffffff')
@@ -750,7 +819,32 @@ grep -n "^from cola.widgets.dag import" test/widgets_dag_history_test.py
 from cola.widgets.dag import _color_contrast
 from cola.widgets.dag import _opaque_color
 from cola.widgets.dag import readable_chip_fill
+from cola.widgets.dag import readable_chip_fills
 ```
+
+Finally, extend the **existing** adversarial test so it exercises the new painted path. Anchor:
+
+```bash
+grep -n "        style,\n        selected_text,\n    )" test/widgets_dag_history_test.py
+```
+
+If that multi-line `grep` finds nothing, use:
+
+```bash
+grep -n "def test_draw_labels_makes_every_adversarial_chip_opaque_and_contrasting" -A 22 test/widgets_dag_history_test.py
+```
+
+In that function the call `delegate._draw_labels(...)` ends with `selected_text,` on its own line
+followed by `    )`. Insert **one line** between them:
+
+```python
+        palette.highlight().color() if selected else palette.base().color(),
+```
+
+> Without this the test keeps passing but stops covering what the delegate now does: it would
+> call `_draw_labels` with `row_background=None` and never reach the adaptation. Its existing
+> assertion — three distinct brushes over adversarial palettes — is exactly the contract trap
+> **F13** is about.
 
 **Run RED:**
 
@@ -814,6 +908,44 @@ def readable_chip_fill(fill, backgrounds, floor=2.5):
     return best
 
 
+def _shifted_value(color, offset):
+    """Return `color` with its HSV value moved by `offset`, clamped to [0, 1]"""
+    hue, saturation, value, _alpha = color.getHsvF()
+    return QtGui.QColor.fromHsvF(
+        hue if hue >= 0.0 else 0.0,
+        saturation,
+        min(1.0, max(0.0, value + offset)),
+        1.0,
+    )
+
+
+def readable_chip_fills(fills, background, floor=2.5):
+    """Make every fill readable on `background` and keep them distinct.
+
+    Nudging each fill on its own can land two of them on the same color when
+    the palette barely told them apart to begin with -- a greyscale theme does
+    exactly that. The inline graph paints three kinds of chip and they have to
+    stay tellable apart, so a collision is moved in lightness until it clears.
+
+    The search is bounded: six offsets, then the color is used as it is. That
+    cannot loop, and no measured palette needs more than one step.
+    """
+    background = _opaque_color(background)
+    result = []
+    for fill in fills:
+        candidate = readable_chip_fill(fill, (background,), floor)
+        if any(candidate.rgba() == taken.rgba() for taken in result):
+            for offset in (0.08, -0.08, 0.16, -0.16, 0.24, -0.24):
+                shifted = _shifted_value(candidate, offset)
+                if _color_contrast(shifted, background) >= floor and all(
+                    shifted.rgba() != taken.rgba() for taken in result
+                ):
+                    candidate = shifted
+                    break
+        result.append(candidate)
+    return tuple(result)
+
+
 ```
 
 ### Step 2.3 (GREEN) — Paint with it
@@ -834,20 +966,54 @@ below it**:
 > A default of `None` is required: `_draw_labels` is also called to measure the label width with
 > `painter=None` and only seven arguments (trap **F7**).
 
-**Anchor 2 — the fill.**
+**Anchor 2 — adapt the three fills once, before the loop.**
 
 ```bash
-grep -n "                chip_text = _best_contrast(candidates, (brush,))" cola/widgets/dag.py
+grep -n "        for i, (tag, display_text, condensed_text) in enumerate(self._row_labels(tags)):" cola/widgets/dag.py
 ```
 
-**Expected:** exactly **one** hit. Insert **directly above it**:
+**Expected:** exactly **one** hit. Insert **directly above that line**:
 
 ```python
-                if row_background is not None:
-                    brush = readable_chip_fill(brush, (row_background,))
+        chip_fills = None
+        if style is not None:
+            chip_fills = (style.chip_other, style.chip_remote, style.chip_head)
+            if row_background is not None:
+                chip_fills = readable_chip_fills(chip_fills, row_background)
+
 ```
 
-**Anchor 3 — the call site.**
+> The three are adapted **together**, not one at a time, and once per row rather than once per
+> chip. Both matter: together is what keeps them distinct (trap **F13**), and once per row is
+> what keeps the painting cheap.
+
+**Anchor 3 — read the adapted fills.**
+
+```bash
+grep -n "                brush = style.chip_other" -A 4 cola/widgets/dag.py
+```
+
+**Expected:** exactly **one** hit. Replace those five lines
+
+```python
+                brush = style.chip_other
+                if tag == _HEAD_REF or tag.startswith(_TAGS_PREFIX):
+                    brush = style.chip_remote
+                elif tag.startswith(_HEADS_PREFIX):
+                    brush = style.chip_head
+```
+
+with
+
+```python
+                brush = chip_fills[0]
+                if tag == _HEAD_REF or tag.startswith(_TAGS_PREFIX):
+                    brush = chip_fills[1]
+                elif tag.startswith(_HEADS_PREFIX):
+                    brush = chip_fills[2]
+```
+
+**Anchor 4 — the call site.**
 
 ```bash
 grep -n "                style.selected_text if selected else None," cola/widgets/dag.py
@@ -869,8 +1035,9 @@ QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p
 QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=offscreen python3 -B -m pytest -p no:ruff -q cola test 2>&1 | tail -3
 ```
 
-**Expected:** baseline + 11 more passed than after Task 1, 0 failed (3 palettes × 3 parametrised
-tests, plus 2 single tests).
+**Expected:** baseline + 15 more passed than after Task 1, 0 failed — 3 palettes × 3
+parametrised tests, 4 palettes for the distinctness test, and 2 single tests. The extended
+adversarial test is not new, so it does not add to the count.
 
 ### Commit
 
