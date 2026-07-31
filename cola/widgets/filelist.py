@@ -232,6 +232,10 @@ class FileWidget(TreeWidget):
         if paths:
             self.select_line_range_for_file.emit(paths[0])
 
+    def all_paths(self):
+        """Every listed path, in display order"""
+        return [item.path for item in self.items()]
+
     def selected_paths(self):
         return [i.path for i in self.selected_items()]
 
