@@ -305,3 +305,54 @@ def test_commit_touching_path_returns_none_when_nothing_touched_it(app_context):
 def test_commit_touching_path_without_usable_input(app_context, oids, path):
     """No commits or no path means no lookup and no git call."""
     assert gitcmds.commit_touching_path(app_context, oids, path) is None
+
+
+def _merge_repo(context):
+    """A branch ahead of main, one behind it, and one that diverged."""
+    helper.run_git('commit', '-m', 'base')
+    base = helper.run_git('rev-parse', 'HEAD').strip()
+    helper.run_git('checkout', '-q', '-b', 'ahead')
+    helper.write_file('ahead.txt', 'ahead\n')
+    helper.run_git('add', 'ahead.txt')
+    helper.run_git('commit', '-m', 'ahead')
+    helper.run_git('checkout', '-q', 'main')
+    helper.run_git('branch', 'behind', base)
+    helper.run_git('checkout', '-q', '-b', 'diverged', base)
+    helper.write_file('diverged.txt', 'diverged\n')
+    helper.run_git('add', 'diverged.txt')
+    helper.run_git('commit', '-m', 'diverged')
+    helper.run_git('checkout', '-q', 'main')
+    helper.write_file('main.txt', 'main\n')
+    helper.run_git('add', 'main.txt')
+    helper.run_git('commit', '-m', 'main work')
+    context.model.update_status()
+    return base
+
+
+@pytest.mark.parametrize(
+    ('ref', 'expected'),
+    (
+        ('ahead', True),
+        ('diverged', True),
+        ('behind', False),
+        ('main', False),
+    ),
+)
+def test_can_merge_reports_whether_the_ref_has_new_commits(app_context, ref, expected):
+    """Ahead and diverged both have something to merge; contained does not."""
+    _merge_repo(app_context)
+
+    assert gitcmds.can_merge(app_context, ref) is expected
+
+
+def test_can_merge_says_no_for_a_ref_that_does_not_exist(app_context):
+    """git exits 128 there; that is a no, not a crash (trap F2)."""
+    _merge_repo(app_context)
+
+    assert gitcmds.can_merge(app_context, 'no-such-branch') is False
+
+
+@pytest.mark.parametrize('ref', ('', None))
+def test_can_merge_says_no_without_a_ref(app_context, ref):
+    """No ref means no question to ask and no git call."""
+    assert gitcmds.can_merge(app_context, ref) is False

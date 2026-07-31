@@ -888,6 +888,25 @@ def list_submodule(context: ApplicationContext) -> list[Any]:
     return ret
 
 
+def can_merge(context, ref):
+    """Return True when `ref` holds commits that HEAD does not.
+
+    That is what "there is something to merge" means: it covers a branch that
+    is strictly ahead and a branch that diverged, and excludes one that is
+    already contained. "git merge-base --is-ancestor" cannot express it -- it
+    answers a different question and reports a diverged branch as unmergeable.
+
+    A ref that does not resolve makes git exit non-zero; that is a no, not an
+    error worth surfacing.
+    """
+    if not ref:
+        return False
+    status, out, _ = context.git.rev_list(f'HEAD..{ref}', count=True, _readonly=True)
+    if status != 0:
+        return False
+    return out.strip() not in ('', '0')
+
+
 def merge_base(context: ApplicationContext, head: str, ref: str) -> core.UStr:
     """Return the merge-base of head and ref"""
     return context.git.merge_base(head, ref, _readonly=True)[STDOUT]
