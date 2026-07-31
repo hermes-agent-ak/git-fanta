@@ -23,13 +23,13 @@ from cola.widgets.dag import CommitHistoryWidget
 from cola.widgets.dag import CommitTreeWidget
 from cola.widgets.dag import CommitTreeWidgetItem
 from cola.widgets.dag import EdgeColor
-from cola.widgets.dag import commit_message_file_spans
 from cola.widgets.dag import GitDAG
 from cola.widgets.dag import GraphDelegate
 from cola.widgets.dag import ReaderThread
 from cola.widgets.dag import _best_contrast
 from cola.widgets.dag import _HistoryCacheMetadata
 from cola.widgets.dag import _opaque_color
+from cola.widgets.dag import commit_message_file_spans
 from cola.widgets.dag import inline_graph_style
 from cola.widgets.main import MainView
 from qtpy import QtCore
