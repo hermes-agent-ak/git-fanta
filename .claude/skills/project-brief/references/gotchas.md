@@ -311,8 +311,9 @@ The asset it returns is `git-fanta.svg`; the function name is not user-visible.
 version display falls back to the builtin value without saying so.
 `test_distribution_name_matches_pyproject` guards it.
 
-**`brew install git-cola` in `.github/workflows/ci.yml` is not a leftover.** It installs the real
-upstream Homebrew formula as a dependency of the macOS job. Renaming it breaks that job.
+**The macOS CI job installs only Git Fanta's own dependencies.** It used to run
+`brew install git-cola`, which pulled the other Git GUI into the build environment and hid any
+dependency Git Fanta failed to declare. Do not put it back; add the concrete formula instead.
 
 **A forgotten `'cola.<key>'` literal will not turn a test red.** `cola/gitcfg.py` falls back to
 the old prefix by design, so the stale key keeps working and the rename is quietly incomplete.

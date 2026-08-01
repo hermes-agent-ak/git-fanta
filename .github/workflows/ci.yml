@@ -123,10 +123,17 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal --no-self-update
           cargo install garden-tools
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      # Only Git Fanta's own dependencies are installed. This job used to run
+      # "brew install git-cola", which hid any dependency Git Fanta failed to
+      # declare behind that formula and left a second Git GUI in the build
+      # environment, so a green macOS job proved less than it appeared to.
       - name: Install dependencies
         run: |
           brew untap aws/tap || true
-          brew install git-cola
+          brew install git
       - name: Build macOS git-fanta.app bundle
         run: garden macos/app -vv -D cola-app='${TREE_PATH}/local/git-fanta.app'
       - name: Upload git-fanta.app.zip

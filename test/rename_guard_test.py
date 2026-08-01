@@ -61,7 +61,6 @@ PROTECTED_REFERENCES = (
     ('fanta/settings.py', 'https://github.com/git-cola/git-cola/issues/1241'),
     ('fanta/themes.py', 'https://github.com/git-cola/git-cola/issues/905'),
     ('docs/conf.py', 'https://gitlab.com/git-cola/git-cola'),
-    ('.github/workflows/ci.yml', 'brew install git-cola'),
     ('test/gravatar_test.py', 'git-cola.github.io'),
 )
 

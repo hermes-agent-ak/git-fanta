@@ -94,16 +94,15 @@ Plan: `docs/plans/2026-07-30-rename-to-git-fanta.md`. Implemented across `11e043
 **Decisions that later work must not undo:**
 
 - **Nothing that points at the upstream project was rewritten.** `CHANGES.rst`, the ~40
-  `github.com/git-cola/...` issue links in code comments, the remotes in `garden.yaml`, and
-  `brew install git-cola` in the macOS CI job all refer to a real, still-existing project.
-  `test/rename_guard_test.py` enforces both directions: no stray old product name, and the
-  allow-listed upstream references still present.
+  `github.com/git-cola/...` issue links in code comments and the remotes in `garden.yaml` all
+  refer to a real, still-existing project. `test/rename_guard_test.py` enforces both directions:
+  no stray old product name, and the allow-listed upstream references still present.
 - **Every user-facing rename has a backwards fallback**, so a pre-rename setup keeps working:
-  `gitcfg._key_candidates()` probes `fanta.*` then `cola.*` (`cola/gitcfg.py:253`),
-  `compat.getenv_with_legacy()` does the same for the env vars (`cola/compat.py:101`),
-  `gitcmds.prepare_commit_message_hook()` still honours a `cola-prepare-commit-msg` hook, and
-  `resources.migrate_config_home()` (`cola/resources.py:236`) copies (git-fanta was renamed from git-cola) `~/.config/git-cola` over
-  once on first run.
+  `gitcfg._key_candidates()` probes `fanta.*` then `cola.*` (`fanta/gitcfg.py:253`),
+  `compat.getenv_with_legacy()` does the same for the env vars (`fanta/compat.py:101`), and
+  `gitcmds.prepare_commit_message_hook()` still honours a `cola-prepare-commit-msg` hook.
+  The config-directory copy that used to sit alongside them was removed in work package 11 --
+  see below.
 - **`git fanta cola` still works.** The sub-command was renamed with an argparse alias
   (`cola/main.py:102`), so old scripts and shell history do not break.
 - **The `.po` source references still say `cola/`,** because the package name did not change.
