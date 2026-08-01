@@ -184,3 +184,26 @@ def test_the_module_entry_point_runs():
     )
 
     assert result.stdout.startswith('git-fanta version ')
+
+
+def _appstream_versions():
+    """The <release version="..."> entries software centres display."""
+    import xml.etree.ElementTree as ET
+
+    versions = {}
+    for path in sorted((REPO_ROOT / 'share' / 'metainfo').glob('*.metainfo.xml')):
+        releases = ET.parse(path).getroot().find('releases')
+        versions[path.name] = [
+            release.get('version') for release in releases.findall('release')
+        ]
+    return versions
+
+
+def test_the_appstream_metadata_lists_this_version():
+    """A software centre showing a different version is a fourth source of truth."""
+    version = _builtin_version()
+    per_file = _appstream_versions()
+
+    assert per_file, 'no AppStream metainfo files found'
+    for name, versions in per_file.items():
+        assert versions[0] == version, f'{name} newest release is {versions[0]}'

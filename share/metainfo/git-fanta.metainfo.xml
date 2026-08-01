@@ -16,6 +16,7 @@
   <url type="bugtracker">https://github.com/hermes-agent-ak/git-fanta/issues</url>
   <url type="vcs-browser">https://github.com/hermes-agent-ak/git-fanta</url>
   <releases>
+    <release version="1.0.1" date="2026-08-02" />
     <release version="1.0.0" date="2026-07-31" />
   </releases>
   <content_rating type="oars-1.1" />
