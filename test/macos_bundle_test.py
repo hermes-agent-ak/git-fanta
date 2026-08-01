@@ -11,7 +11,9 @@ import pathlib
 import plistlib
 import xml.etree.ElementTree as ET
 
-INFO_PLIST = pathlib.Path(__file__).resolve().parent.parent / 'contrib/darwin/Info.plist'
+INFO_PLIST = (
+    pathlib.Path(__file__).resolve().parent.parent / 'contrib/darwin/Info.plist'
+)
 
 
 def _plist():
@@ -33,7 +35,8 @@ def _keys_in_document_order():
 def test_no_key_is_defined_twice():
     """A second CFBundleName silently wins over the first one."""
     duplicates = [
-        key for key, count in collections.Counter(_keys_in_document_order()).items()
+        key
+        for key, count in collections.Counter(_keys_in_document_order()).items()
         if count > 1
     ]
 
