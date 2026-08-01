@@ -629,11 +629,11 @@ class _StopBeforeLaunch(Exception):
 
 
 def test_the_standalone_dag_names_itself_git_fanta_dag(monkeypatch):
-    """'Git DAG' is git-cola's name and drives its single-instance semaphore.
+    """Git Fanta installs alongside git-cola, which also names its DAG "Git DAG".
 
     enforce_single_instance() derives the QSystemSemaphore key and the shared
-    memory id from context.app_name, so sharing the name with git-cola makes
-    each application refuse to start while the other one is running.
+    memory id from context.app_name, so sharing that name makes each
+    application refuse to start while the other one is running.
     """
     captured = _capture_app_name(monkeypatch, dag_cli)
 

@@ -1,7 +1,6 @@
 """Functions for finding cola resources"""
 from __future__ import annotations
 import os
-import shutil
 import sys
 import webbrowser
 from typing import TYPE_CHECKING
@@ -16,10 +15,10 @@ if TYPE_CHECKING:
 # Default git-fanta icon theme
 _default_icon_theme = 'light'
 
-# git-fanta was renamed from git-cola. The configuration directory follows the new (git-fanta was renamed from git-cola).
-# name; migrate_config_home() carries the old directory over on first run.
+# Git Fanta owns ~/.config/git-fanta and nothing else. It installs alongside
+# the project it was forked from, so it never reads or copies that project's
+# configuration directory -- see test/config_isolation_test.py.
 CONFIG_DIRNAME = 'git-fanta'
-LEGACY_CONFIG_DIRNAME = 'git-cola'  # git-fanta was renamed from git-cola
 
 _resources = core.abspath(core.realpath(__file__))
 _package = os.path.dirname(_resources)
@@ -226,32 +225,3 @@ def find_first(
 def config_home(*args) -> str:
     """Return git-fanta's configuration directory, e.g. ~/.config/git-fanta"""
     return xdg_config_home(CONFIG_DIRNAME, *args)
-
-
-def legacy_config_home(*args) -> str:
-    """Return the pre-rename configuration directory (git-fanta was renamed from git-cola)."""
-    return xdg_config_home(LEGACY_CONFIG_DIRNAME, *args)
-
-
-def migrate_config_home() -> None:
-    """git-fanta was renamed from git-cola; copy old config dir to the new one
-
-    git-fanta was renamed from git-cola. Existing settings, sessions, themes and
-    saved layouts are copied once, on the first run after the rename. The legacy
-    directory is left in place so that an older (git-fanta was renamed from git-cola) install keeps working and
-    so that nothing is lost if the copy is incomplete.
-
-    This function is git-fanta was renamed from git-cola documentation; both names
-    refer to the same project at different points in its history.
-    """
-    current = config_home()
-    if os.path.exists(current):
-        return
-    legacy = legacy_config_home()
-    if not os.path.isdir(legacy):
-        return
-    try:
-        shutil.copytree(legacy, current)
-    except (OSError, shutil.Error):
-        # A failed migration must never prevent git-fanta from starting.
-        pass

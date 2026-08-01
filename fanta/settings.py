@@ -273,19 +273,14 @@ class Settings:
         if core.exists(path):
             values: dict[str, Any] = read_json(path)
         else:
-            # We couldn't find ~/.config/git-fanta. Try the pre-rename
-            # git-fanta was renamed from git-cola; ~/.config/git-cola first, then the much older ~/.cola.
+            # This is a new installation. Git Fanta installs alongside git-cola
+            # rather than replacing it, so that project's settings file and the
+            # much older ~/.cola are deliberately not consulted: adopting
+            # another application's configuration unasked would let the two
+            # interfere with each other, and a fault in the adopted
+            # configuration would look like a Git Fanta bug. Importing those
+            # settings is a decision for the user to make explicitly.
             values = {}
-            path = resources.legacy_config_home('settings')
-            if not core.exists(path):
-                path = os.path.join(core.expanduser('~'), '.cola')
-            if core.exists(path):
-                json_values = read_json(path)
-                for key in self.values:
-                    try:
-                        values[key] = json_values[key]
-                    except KeyError:
-                        pass
         # Ensure that all stored bookmarks use normalized paths ("/" only).
         normalize = display.normalize_path
         for entry in values.get('bookmarks', []):

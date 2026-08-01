@@ -826,6 +826,17 @@ CONFIGURATION VARIABLES
 
 These variables can be set using `git config` or from the settings.
 
+Git Fanta reads and writes the ``fanta.`` prefix. For each ``fanta.<key>`` it
+also *reads* the corresponding ``cola.<key>`` when no ``fanta.`` value is set,
+so an existing configuration keeps working without a migration step. A
+``fanta.`` value always wins over a ``cola.`` value of the same name, and Git
+Fanta never writes a ``cola.`` key.
+
+That fallback is a transitional convenience and will be removed in a future
+release. If you have both applications installed and want them configured
+independently, spell your Git Fanta settings ``fanta.<key>`` explicitly --
+otherwise a ``cola.<key>`` in ``~/.gitconfig`` will influence both.
+
 fanta.aspell.enabled
 -------------------
 
