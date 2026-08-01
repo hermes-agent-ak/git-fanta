@@ -8,7 +8,6 @@ from unittest.mock import Mock
 import pytest
 
 from cola import cmds
-from cola import guicmds
 from cola.interaction import Interaction
 from cola.models import dag
 from cola.widgets import dag as dagwidget
@@ -222,30 +221,47 @@ def test_detached_head_on_a_plain_commit_does_not_ask_again(
     assert checkouts == []
 
 
-def test_several_branches_at_one_commit_open_the_checkout_dialog(
+def test_several_branches_at_one_commit_offer_exactly_those_branches(
     qapp, checkout_context, managed_qobject, monkeypatch
 ):
-    """Mehrdeutig heisst: der vorhandene Auswahldialog entscheidet."""
+    """Ambiguous means: ask, and offer only what is actually on that commit."""
     _base, topic_oid = _repo_with_topic(checkout_context)
     _git('branch', 'alpha', 'topic')
     checkout_context.model.update_status()
-    chosen = []
+    offered = []
     monkeypatch.setattr(
-        guicmds,
-        'checkout_branch',
-        lambda context, default=None: chosen.append(default),
-    )
-    checkouts = []
-    monkeypatch.setattr(
-        checkout_context.git, 'checkout', lambda *a, **kw: checkouts.append((a, kw))
+        dagwidget,
+        'select_branch_at_commit',
+        lambda branches, parent=None: offered.append(list(branches)) or 'alpha',
     )
     confirmed = _never_confirm(monkeypatch)
     tree = _tree(checkout_context, managed_qobject)
 
     tree.checkout_commit(_fake_commit(topic_oid, branches=['alpha', 'topic']))
 
-    assert chosen == ['alpha']
-    assert checkouts == []
+    assert offered == [['alpha', 'topic']]
+    assert _git('rev-parse', '--abbrev-ref', 'HEAD') == 'alpha'
+    assert confirmed == []
+
+
+def test_cancelling_the_branch_choice_checks_nothing_out(
+    qapp, checkout_context, managed_qobject, monkeypatch
+):
+    """A cancelled dialog must leave HEAD exactly where it was."""
+    _base, topic_oid = _repo_with_topic(checkout_context)
+    _git('branch', 'alpha', 'topic')
+    checkout_context.model.update_status()
+    head_before = _git('rev-parse', 'HEAD')
+    monkeypatch.setattr(
+        dagwidget, 'select_branch_at_commit', lambda branches, parent=None: ''
+    )
+    confirmed = _never_confirm(monkeypatch)
+    tree = _tree(checkout_context, managed_qobject)
+
+    tree.checkout_commit(_fake_commit(topic_oid, branches=['alpha', 'topic']))
+
+    assert _git('rev-parse', 'HEAD') == head_before
+    assert _git('rev-parse', '--abbrev-ref', 'HEAD') == 'main'
     assert confirmed == []
 
 
@@ -495,3 +511,56 @@ def test_merge_action_does_nothing_without_a_candidate(
     tree.merge_branch()
 
     assert opened == []
+
+
+def _branch_dialog(managed_qobject, branches):
+    """Build the dialog without ever entering its event loop (trap F2)."""
+    return managed_qobject(dagwidget.SelectBranchDialog(branches))
+
+
+def test_the_branch_dialog_lists_exactly_the_branches_it_was_given(
+    qapp, managed_qobject
+):
+    """No completer, no other refs: the row already said which branches count."""
+    dialog = _branch_dialog(managed_qobject, ['alpha', 'topic'])
+
+    shown = [
+        dialog.branch_list.item(row).text() for row in range(dialog.branch_list.count())
+    ]
+
+    assert shown == ['alpha', 'topic']
+    assert dialog.value() == 'alpha'
+    assert dialog.checkout_button.isEnabled()
+
+
+def test_the_branch_dialog_returns_the_selected_branch(qapp, managed_qobject):
+    dialog = _branch_dialog(managed_qobject, ['alpha', 'topic'])
+
+    dialog.branch_list.setCurrentRow(1)
+
+    assert dialog.value() == 'topic'
+
+
+def test_the_branch_dialog_cannot_be_accepted_without_a_selection(
+    qapp, managed_qobject
+):
+    dialog = _branch_dialog(managed_qobject, ['alpha', 'topic'])
+
+    dialog.branch_list.clearSelection()
+
+    assert dialog.value() == ''
+    assert not dialog.checkout_button.isEnabled()
+
+
+def test_an_empty_branch_list_opens_no_dialog_at_all(qapp, monkeypatch):
+    """A window with nothing to offer must never appear."""
+    built = []
+
+    def fail(*args, **kwargs):
+        built.append(args)
+        raise AssertionError('the dialog must not be constructed')
+
+    monkeypatch.setattr(dagwidget, 'SelectBranchDialog', fail)
+
+    assert dagwidget.select_branch_at_commit([]) == ''
+    assert built == []

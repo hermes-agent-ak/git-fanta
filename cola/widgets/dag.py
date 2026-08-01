@@ -105,6 +105,96 @@ def _confirm_detached_checkout(context, commit):
     )
 
 
+class SelectBranchDialog(standard.Dialog):
+    """Choose one of the branch heads that sit on a single commit.
+
+    The Checkout Branch dialog offers every branch in the repository, which is
+    the wrong question after a double-click on one row: the row already says
+    which branches are meant. This one lists exactly those and nothing else.
+    """
+
+    def __init__(self, branches, parent=None):
+        standard.Dialog.__init__(self, parent=parent)
+        self.setWindowTitle(N_('Checkout Branch'))
+        if parent is not None:
+            self.setWindowModality(Qt.WindowModal)
+        self._branches = list(branches)
+
+        self.label = QtWidgets.QLabel(
+            N_('Several branches point at this commit. Choose the one to check out.')
+        )
+        self.label.setWordWrap(True)
+
+        self.branch_list = QtWidgets.QListWidget()
+        self.branch_list.setAlternatingRowColors(True)
+        self.branch_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        qtutils.set_items(self.branch_list, self._branches)
+        if self._branches:
+            self.branch_list.setCurrentRow(0)
+
+        self.close_button = qtutils.close_button()
+        self.checkout_button = qtutils.ok_button(
+            N_('Checkout'), icon=icons.branch(), enabled=bool(self._branches)
+        )
+
+        button_layout = qtutils.hbox(
+            defs.no_margin,
+            defs.button_spacing,
+            qtutils.STRETCH,
+            self.close_button,
+            self.checkout_button,
+        )
+        self.main_layout = qtutils.vbox(
+            defs.margin,
+            defs.spacing,
+            self.label,
+            self.branch_list,
+            button_layout,
+        )
+        self.setLayout(self.main_layout)
+
+        self.branch_list.itemSelectionChanged.connect(self._selection_changed)
+        self.branch_list.itemDoubleClicked.connect(self._item_double_clicked)
+        qtutils.connect_button(self.checkout_button, self.accept)
+        qtutils.connect_button(self.close_button, self.reject)
+
+        # No settings: this dialog has no geometry worth remembering, and the
+        # test context's settings object is a Mock that init_state would choke
+        # on. selectcommits.SelectCommits does the same.
+        self.init_state(None, self.resize_widget, parent)
+
+    def resize_widget(self, parent):
+        """Set the initial size of the widget"""
+        width, height = qtutils.default_size(parent, 420, 280)
+        self.resize(width, height)
+
+    def value(self):
+        """Return the selected branch name, or an empty string"""
+        return qtutils.selected_item(self.branch_list, self._branches) or ''
+
+    def _selection_changed(self):
+        self.checkout_button.setEnabled(bool(self.value()))
+
+    def _item_double_clicked(self, _item):
+        if self.value():
+            self.accept()
+
+
+def select_branch_at_commit(branches, parent=None):
+    """Ask which of the branch heads on one commit to check out.
+
+    Returns the chosen branch name, or an empty string when the dialog was
+    cancelled or there was nothing to choose from.
+    """
+    branches = list(branches)
+    if not branches:
+        return ''
+    dialog = SelectBranchDialog(branches, parent=parent)
+    if dialog.exec_() != QtWidgets.QDialog.Accepted:
+        return ''
+    return dialog.value()
+
+
 class ViewerMixin:
     """Implementations must provide selected_items()"""
 
@@ -342,8 +432,9 @@ class ViewerMixin:
 
         A commit that is the tip of exactly one local branch is what the user
         means by "take me to that branch", so it is checked out by name. Several
-        branches at the same commit are ambiguous and go through the existing
-        Checkout Branch dialog. Anything else would detach HEAD, which is a state
+        branches at the same commit are ambiguous, so they are offered for
+        selection - only those, never every branch in the repository. Anything
+        else would detach HEAD, which is a state
         the user has to opt into. A commit that only carries a remote branch
         becomes a new local branch tracking it -- that is what the user means
         by double-clicking a branch they do not have yet.
@@ -358,7 +449,9 @@ class ViewerMixin:
             cmds.do(cmds.CheckoutBranch, context, branches[0])
             return
         if branches:
-            guicmds.checkout_branch(context, default=branches[0])
+            branch = select_branch_at_commit(branches, parent=qtutils.active_window())
+            if branch:
+                cmds.do(cmds.CheckoutBranch, context, branch)
             return
         remote_branches = remote_branch_labels(commit)
         if len(remote_branches) == 1:
