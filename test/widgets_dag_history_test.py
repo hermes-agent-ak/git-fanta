@@ -1102,6 +1102,8 @@ class _TextRecordingPainter:
         self.rounded_rects = []
         self.rounded_widths = []
         self.ellipses = []
+        self.font = None
+        self.text_fonts = []
 
     def save(self):
         pass
@@ -1124,8 +1126,8 @@ class _TextRecordingPainter:
     def setBrush(self, brush):
         self.brush = QtGui.QBrush(brush)
 
-    def setFont(self, *_args):
-        pass
+    def setFont(self, font):
+        self.font = QtGui.QFont(font)
 
     def drawLine(self, *_args):
         pass
@@ -1146,6 +1148,7 @@ class _TextRecordingPainter:
 
     def drawText(self, *args):
         self.text_colors.append((str(args[-1]), self.pen.color()))
+        self.text_fonts.append(QtGui.QFont(self.font) if self.font else None)
 
 
 def test_24pt_visible_chip_and_hit_area_have_identical_boundaries(
@@ -1300,7 +1303,8 @@ def test_selected_inline_summary_and_each_chip_have_contrasting_text(
     for pen, background in painter.rounded_styles:
         assert _contrast(pen, background) >= 4.5
     text_colors = dict(painter.text_colors)
-    assert set(text_colors) >= {'other', 'v1', 'main', 'commit commit'}
+    tag_text = GraphDelegate.TAG_MARKER + 'v1'
+    assert set(text_colors) >= {'other', tag_text, 'main', 'commit commit'}
     assert text_colors['commit commit'] == palette.highlightedText().color()
 
 
@@ -4503,3 +4507,110 @@ def test_each_ref_kind_gets_its_own_chip_color(qapp, app_context, managed_qobjec
         style.chip_tag,
         style.chip_head,
     ]
+
+
+def test_a_tag_chip_is_marked_and_drawn_bold(qapp, app_context, managed_qobject):
+    """Color alone degrades on a greyscale theme; the glyph and weight do not."""
+    palette = _palette('#f4f5f7', '#202124', '#ffffff', '#edf0f4', '#3268b2', '#ffffff')
+    style = inline_graph_style(palette)
+    tree = _tree(app_context, managed_qobject)
+    font = QtGui.QFont(tree.font())
+    painter = _TextRecordingPainter()
+
+    tree.graph_delegate._draw_labels(
+        painter,
+        13,
+        ['tags/v1.0', 'heads/main'],
+        GraphDelegate.LANE_WIDTH + 8,
+        QtGui.QFontMetrics(font),
+        None,
+        style,
+        None,
+        None,
+        font,
+    )
+
+    assert GraphDelegate.TAG_MARKER == chr(0x2691) + ' '
+    assert [text for text, _color in painter.text_colors] == [
+        GraphDelegate.TAG_MARKER + 'v1.0',
+        'main',
+    ]
+    assert [label_font.bold() for label_font in painter.text_fonts] == [True, False]
+
+
+def test_a_branch_named_like_a_tag_is_not_marked(qapp, app_context, managed_qobject):
+    """The marker follows the ref prefix, never the name."""
+    palette = _palette('#f4f5f7', '#202124', '#ffffff', '#edf0f4', '#3268b2', '#ffffff')
+    factory = dag.CommitFactory()
+    commit = _commit(app_context, factory, 'commit')
+    commit.tags = ['heads/v1.0']
+    tree = _tree(app_context, managed_qobject)
+
+    painter = _draw_row_labels(tree, commit, palette)
+
+    assert [text for text, _color in painter.text_colors] == ['v1.0']
+
+
+def test_the_bold_tag_chip_and_its_hit_area_have_identical_boundaries(
+    qapp, app_context, managed_qobject
+):
+    """The bold advance has to reach the chip width and the hit test alike."""
+    factory = dag.CommitFactory()
+    commit = _commit(app_context, factory, 'commit')
+    commit.tags = ['tags/v1.0.0']
+    tree = _tree(app_context, managed_qobject)
+    tree.add_commits([commit], _graph_result([commit]))
+    item = tree.topLevelItem(0)
+    index = tree.indexFromItem(item, 0)
+    font = QtGui.QFont(tree.font())
+    font.setPointSize(18)
+    metrics = QtGui.QFontMetrics(font)
+    bold_font = QtGui.QFont(font)
+    bold_font.setBold(True)
+    option = QtWidgets.QStyleOptionViewItem()
+    option.font = font
+    option.fontMetrics = metrics
+    hint = tree.graph_delegate.sizeHint(option, index)
+    rect = QtCore.QRectF(0, 0, hint.width(), hint.height())
+    painter = _TextRecordingPainter()
+
+    tree.graph_delegate._draw_labels(
+        painter,
+        rect.center().y(),
+        commit.tags,
+        GraphDelegate.LANE_WIDTH + 8,
+        metrics,
+        item,
+        inline_graph_style(tree.palette()),
+        None,
+        None,
+        font,
+    )
+
+    chip = painter.rounded_rects[0]
+    marked = GraphDelegate.TAG_MARKER + 'v1.0.0'
+    assert QtGui.QFontMetrics(bold_font).horizontalAdvance(marked) > (
+        metrics.horizontalAdvance(marked)
+    )
+    assert chip.width() == (
+        QtGui.QFontMetrics(bold_font).horizontalAdvance(marked)
+        + 2 * GraphDelegate.LABEL_TEXT_OFFSET
+    )
+    for x in (chip.left() + 1, chip.right() - 1):
+        assert (
+            tree.graph_delegate._label_hit_test(
+                QtCore.QPointF(x, rect.center().y()), rect, metrics, index, item, font
+            )[0]
+            == 0
+        )
+    assert (
+        tree.graph_delegate._label_hit_test(
+            QtCore.QPointF(chip.right() + 2, rect.center().y()),
+            rect,
+            metrics,
+            index,
+            item,
+            font,
+        )[0]
+        == -1
+    )

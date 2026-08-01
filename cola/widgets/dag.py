@@ -1402,6 +1402,10 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
     # (cola/widgets/branch.py). The inline graph draws text, so it uses the glyph.
     CURRENT_BRANCH_MARKER = chr(0x2605) + ' '
     CURRENT_BRANCH_BORDER = 2
+    # Modern clients give tags their own color and a tag glyph. The flag is the
+    # widest-supported BMP glyph that reads as a marker; astral-plane emoji are
+    # missing from too many desktop fonts.
+    TAG_MARKER = chr(0x2691) + ' '
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -1461,9 +1465,13 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         labels = []
         marked = False
         for ref, display_text, condensed_text in _prepare_labels(tags):
-            if self._is_current_branch_ref(ref):
+            marker = ''
+            if ref.startswith(_TAGS_PREFIX):
+                marker = self.TAG_MARKER
+            elif self._is_current_branch_ref(ref):
                 marked = True
                 marker = self.CURRENT_BRANCH_MARKER
+            if marker:
                 display_text = marker + display_text
                 if condensed_text is not None:
                     condensed_text = marker + condensed_text
@@ -1594,6 +1602,7 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
                 option.palette.highlight().color()
                 if selected
                 else option.palette.base().color(),
+                option.font,
             )
 
         text = index.data(Qt.DisplayRole)
@@ -1608,6 +1617,21 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
             )
 
         painter.restore()
+
+    @staticmethod
+    def _tag_fonts(font):
+        """Return the bold (font, metrics) tags are drawn with, or (None, None).
+
+        QFontMetrics cannot hand back the font it was built from, so the font
+        has to travel next to it. A caller without one gets the row font for
+        every chip, which keeps painting and hit testing consistent with each
+        other even though the tags are then not bold.
+        """
+        if font is None:
+            return None, None
+        bold_font = QtGui.QFont(font)
+        bold_font.setBold(True)
+        return bold_font, QtGui.QFontMetrics(bold_font)
 
     def _get_spacing(self, condensed_text: str | None) -> int:
         if condensed_text is not None:
@@ -1625,6 +1649,7 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         style: InlineGraphStyle | None = None,
         selected_text: QtGui.QColor | None = None,
         row_background: QtGui.QColor | None = None,
+        font: QtGui.QFont | None = None,
     ):
         """Draw branch/tag labels and return total width used."""
         current_x = start_x
@@ -1642,10 +1667,14 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
             if row_background is not None:
                 chip_fills = readable_chip_fills(chip_fills, row_background)
 
+        bold_font, bold_metrics = self._tag_fonts(font)
+
         for i, (tag, display_text, condensed_text) in enumerate(self._row_labels(tags)):
+            is_tag = tag.startswith(_TAGS_PREFIX)
+            label_metrics = bold_metrics if is_tag and bold_metrics else font_metrics
             if painter is not None:
                 brush = chip_fills[0]
-                if tag.startswith(_TAGS_PREFIX):
+                if is_tag:
                     brush = chip_fills[2]
                 elif tag == _HEAD_REF:
                     brush = chip_fills[1]
@@ -1660,9 +1689,11 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
                     chip_pen.setWidth(self.CURRENT_BRANCH_BORDER)
                 painter.setPen(chip_pen)
                 painter.setBrush(brush)
+                if bold_font is not None:
+                    painter.setFont(bold_font if is_tag else font)
 
             shown, text_width = self._label_shown_text(
-                condensed_text, display_text, font_metrics, item, i
+                condensed_text, display_text, label_metrics, item, i
             )
             text_height = font_metrics.height()
 
@@ -1683,9 +1714,14 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
 
         return current_x - start_x
 
-    def _labels_width(self, font_metrics: QtGui.QFontMetrics, tags: list[str]):
+    def _labels_width(
+        self,
+        font_metrics: QtGui.QFontMetrics,
+        tags: list[str],
+        font: QtGui.QFont | None = None,
+    ):
         """Calculate total width needed for all labels."""
-        return self._draw_labels(None, 0, tags, 0, font_metrics, None)
+        return self._draw_labels(None, 0, tags, 0, font_metrics, None, font=font)
 
     def _label_shown_text(
         self,
@@ -1733,7 +1769,9 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
 
         labels_width = 0
         if commit and commit.tags:
-            labels_width = self._labels_width(option.fontMetrics, commit.tags)
+            labels_width = self._labels_width(
+                option.fontMetrics, commit.tags, option.font
+            )
 
         # Add space for text if present.
         text = index.data(Qt.DisplayRole)
@@ -1759,6 +1797,7 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         font_metrics: QtGui.QFontMetrics,
         index: int,
         item: object | None,
+        font: QtGui.QFont | None = None,
     ) -> tuple[int, bool]:
         """Return (index, is_condensed) if pos is over a label, else (-1, False)."""
         commit = index.data(COMMIT_ROLE)
@@ -1771,11 +1810,14 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         current_x = rect.left() + self._graph_width(row, prev_row) + 8
         mid_y = rect.center().y()
         text_height = font_metrics.height()
-        for i, (_, display_text, condensed_text) in enumerate(
+        _bold_font, bold_metrics = self._tag_fonts(font)
+        for i, (ref, display_text, condensed_text) in enumerate(
             self._row_labels(commit.tags)
         ):
+            is_tag = ref.startswith(_TAGS_PREFIX)
+            label_metrics = bold_metrics if is_tag and bold_metrics else font_metrics
             _, text_width = self._label_shown_text(
-                condensed_text, display_text, font_metrics, item, i
+                condensed_text, display_text, label_metrics, item, i
             )
             box_left = current_x - x_offset
             box_right = current_x + text_width + x_offset
@@ -1793,12 +1835,13 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         font_metrics: QtGui.QFontMetrics,
         index: int,
         item: object | None,
+        font: QtGui.QFont | None = None,
     ) -> None:
         if item is None:
             self.set_hover(None, -1)
             return
         label_idx, is_condensed = self._label_hit_test(
-            pos, rect, font_metrics, index, item
+            pos, rect, font_metrics, index, item, font
         )
         if label_idx >= 0 and is_condensed is not None:
             self.set_hover(item, label_idx)
@@ -2127,7 +2170,7 @@ class CommitTreeWidget(standard.TreeWidget, ViewerMixin):
             else -1
         )
         self.graph_delegate.update_label_hover(
-            pos, rect, self.fontMetrics(), index, item
+            pos, rect, self.fontMetrics(), index, item, self.font()
         )
         QtWidgets.QTreeWidget.mouseMoveEvent(self, event)
 
