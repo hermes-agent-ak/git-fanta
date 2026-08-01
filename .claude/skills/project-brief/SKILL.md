@@ -84,12 +84,20 @@ garden check/pyupgrade     # py39 idiom check
 garden doc/html            # Sphinx build
 ```
 
-First-time setup: `garden dev/virtualenv && garden dev` (creates `env3/`).
+First-time setup: `garden dev/virtualenv && garden dev` (creates `env3/`). Without garden,
+`python3 -m venv --system-site-packages env3` is what `dev/virtualenv` does.
 
 Focused test runs without garden — the form used throughout this repo's plans and CI:
 
 ```bash
 QT_QPA_PLATFORM=offscreen python3 -B -m pytest test/widgets_main_history_test.py -p no:ruff -q
+```
+
+**Run the full suite with `env3/bin` on `PATH`**, the way `garden test` does — four tests in
+`test/git_test.py` shell out to `python`, which many systems do not provide, only `python3`:
+
+```bash
+PATH="$PWD/env3/bin:$PATH" QT_QPA_PLATFORM=offscreen python3 -B -m pytest test/ -p no:ruff -q
 ```
 
 Add `QT_API=pyqt5` or `QT_API=pyqt6` to reproduce the CI binding matrix.

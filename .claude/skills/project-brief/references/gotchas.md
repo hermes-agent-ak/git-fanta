@@ -241,14 +241,22 @@ pytest capture that is an error, not a `False`. Monkeypatch it in every test tha
 **`cmds.do()` swallows exceptions** into `Interaction.critical` (`cola/cmds.py:3591`). A broken
 command does not fail a test by itself; assert on the git state or the model instead.
 
+**Four tests in `test/git_test.py` need `python` on `PATH`, not just `python3`.** `test_stdout`,
+`test_stderr`, `test_stdout_and_stderr` and `test_it_doesnt_deadlock` call
+`git.Git.execute(['python', '-c', ...])`. When `python` does not resolve, `core.py` turns the
+`OSError` into `EXIT_UNAVAILABLE` and all four fail with `assert 69 == 0` — a status that says
+nothing about the cause. A virtualenv's `bin/` always provides `python`, which is why `garden
+test` never sees this. Run the full suite as `PATH="$PWD/env3/bin:$PATH" ... pytest test/`.
+
 **The full offscreen suite segfaults intermittently, and it is not your change.** A whole-suite
 run prints `Fatal Python error: Segmentation fault` roughly one run in four. Measured on
-2026-08-01 over 20 full runs: 4/10 on the branch under development, 2/10 on its merge base, and
-1/6 on the merge-base *production* code with only the branch's new test files copied in. **The
-crash site moves between runs** — `widgets/dag.py` `__init__`, `widgets/main.py` `__init__`,
-`widgets/text.py:_refresh_rect` via `diff.py:resizeEvent`, even inside `subprocess`. The affected
-file always passes when run alone. Before spending a cycle on it, run the same suite on the merge
-base a few times; a single crash on your branch proves nothing.
+2026-08-01 over 26 full runs: 4/10 on the branch under development, 2/10 on its merge base, 1/6
+on the merge-base *production* code with only the branch's new test files copied in, and 1/6
+again from inside the `env3` virtualenv with everything passing. **The crash site moves between
+runs** — `widgets/dag.py` `__init__`, `widgets/main.py` `__init__`, `widgets/text.py:_refresh_rect`
+via `diff.py:resizeEvent`, even inside `subprocess`. The affected file always passes when run
+alone. Before spending a cycle on it, run the same suite on the merge base a few times; a single
+crash on your branch proves nothing.
 
 ## Sorting
 
