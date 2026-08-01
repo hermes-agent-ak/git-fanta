@@ -49,6 +49,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def cmd_dag(args: argparse.Namespace | None) -> int:
     """Run git-fanta-dag via the `git fanta dag` sub-command"""
-    context = app.application_init(args, app_name='Git DAG', setup_repo=True)
+    context = app.application_init(args, app_name='Git Fanta DAG', setup_repo=True)
     view = git_dag(context, args=args, show=False)
     return app.application_start(context, view)

@@ -612,7 +612,7 @@ def cmd_config(args: argparse.Namespace) -> int:
 def cmd_dag(args: argparse.Namespace) -> int:
     from .widgets import dag
 
-    context = app.application_init(args, app_name='Git DAG')
+    context = app.application_init(args, app_name='Git Fanta DAG')
     # cola.main() uses parse_args(), unlike dag.main() which uses
     # parse_known_args(), thus we aren't able to automatically forward
     # all unknown arguments.  Special-case support for "--all" since it's

@@ -610,3 +610,46 @@ def test_the_pseudo_commit_date_uses_the_same_format(app_context):
     authdate = dag.get_date_for_current_time(app_context)
 
     assert re.fullmatch(_ISO_MINUTE, authdate), authdate
+
+
+def _capture_app_name(monkeypatch, module):
+    """Record the app_name that `module.cmd_dag` hands to application_init()."""
+    captured = {}
+
+    def fake_application_init(_args, app_name=None, **_kwargs):
+        captured['app_name'] = app_name
+        raise _StopBeforeLaunch()
+
+    monkeypatch.setattr(module.app, 'application_init', fake_application_init)
+    return captured
+
+
+class _StopBeforeLaunch(Exception):
+    """Abort cmd_dag() once the application name has been observed."""
+
+
+def test_the_standalone_dag_names_itself_git_fanta_dag(monkeypatch):
+    """'Git DAG' is git-cola's name and drives its single-instance semaphore.
+
+    enforce_single_instance() derives the QSystemSemaphore key and the shared
+    memory id from context.app_name, so sharing the name with git-cola makes
+    each application refuse to start while the other one is running.
+    """
+    captured = _capture_app_name(monkeypatch, dag_cli)
+
+    with pytest.raises(_StopBeforeLaunch):
+        dag_cli.cmd_dag(argparse.Namespace())
+
+    assert captured['app_name'] == 'Git Fanta DAG'
+
+
+def test_the_dag_sub_command_uses_the_same_name(monkeypatch):
+    """`git fanta dag` and `git-fanta-dag` must not disagree about the name."""
+    from fanta import main as main_cli
+
+    captured = _capture_app_name(monkeypatch, main_cli)
+
+    with pytest.raises(_StopBeforeLaunch):
+        main_cli.cmd_dag(argparse.Namespace())
+
+    assert captured['app_name'] == 'Git Fanta DAG'
