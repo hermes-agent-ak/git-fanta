@@ -8,6 +8,7 @@ up, and they have to agree with each other and with the fork's own tags.
 
 import pathlib
 import re
+import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -123,3 +124,37 @@ def test_the_generator_changes_nothing_else():
     generated = generator.substitute(source, _builtin_version())
 
     assert generated == source
+
+
+def test_the_version_output_names_git_fanta():
+    """`cola version 1.0.1` in a support ticket reads as git-cola being installed."""
+    from fanta import version as version_module
+
+    assert version_module.fanta_version().startswith('git-fanta version ')
+    assert not hasattr(version_module, 'cola_version')
+
+
+def test_the_version_command_prints_the_fork_name(capsys):
+    from fanta import version as version_module
+
+    version_module.print_version()
+
+    assert capsys.readouterr().out.startswith('git-fanta version ')
+
+
+def test_the_launcher_reports_the_fork_name():
+    """End to end, through argparse and app.py, the way a user sees it."""
+    import os
+    import subprocess
+
+    env = dict(os.environ, QT_QPA_PLATFORM='offscreen')
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / 'bin' / 'git-fanta'), '--version'],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=str(REPO_ROOT),
+        env=env,
+    )
+
+    assert result.stdout.startswith('git-fanta version ')

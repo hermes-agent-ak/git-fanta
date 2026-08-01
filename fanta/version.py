@@ -135,13 +135,18 @@ def git_version(context) -> str:
     return result
 
 
-def cola_version(builtin: bool = False) -> str:
-    """A version string for consumption by humans"""
+def fanta_version(builtin: bool = False) -> str:
+    """A version string for consumption by humans
+
+    The product name is part of the string on purpose: it ends up in support
+    tickets, logs and release checks, where "cola version 1.0.1" reads as the
+    project this was forked from being installed.
+    """
     if builtin:
         suffix = builtin_version()
     else:
         suffix = version()
-    return 'cola version %s' % suffix
+    return 'git-fanta version %s' % suffix
 
 
 def print_version(builtin: bool = False, brief: bool = False) -> None:
@@ -150,5 +155,5 @@ def print_version(builtin: bool = False, brief: bool = False) -> None:
     elif brief:
         msg = version()
     else:
-        msg = cola_version(builtin=builtin)
+        msg = fanta_version(builtin=builtin)
     print(msg)

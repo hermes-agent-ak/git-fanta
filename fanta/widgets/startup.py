@@ -36,7 +36,7 @@ class StartupDialog(standard.Dialog):
         self.logo_label = qtutils.pixmap_label(icons.cola(), defs.huge_icon)
         self.logo_label.setAlignment(Qt.AlignCenter)
 
-        self.logo_text_label = qtutils.label(text=version.cola_version())
+        self.logo_text_label = qtutils.label(text=version.fanta_version())
         self.logo_text_label.setAlignment(Qt.AlignCenter)
 
         self.repodir = None
