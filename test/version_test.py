@@ -28,12 +28,41 @@ def _pyproject_fallback_version():
     return match.group(1)
 
 
+def _pynsist_value(section, key, text=None):
+    """Read one key out of one section of a pynsist config.
+
+    pynsist.cfg has two `version` keys -- the application's and the Python
+    interpreter's -- so anything that reads or writes one of them has to say
+    which section it means.
+    """
+    if text is None:
+        text = (REPO_ROOT / 'pynsist.cfg').read_text(encoding='utf-8')
+    current = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('[') and stripped.endswith(']'):
+            current = stripped
+        elif current == section:
+            match = re.match(rf'{key}\s*=\s*(.*)$', stripped)
+            if match:
+                return match.group(1).strip()
+    raise AssertionError(f'pynsist.cfg has no {key} in {section}')
+
+
 def _pynsist_version():
     """The version baked into the Windows installer."""
-    text = (REPO_ROOT / 'pynsist.cfg').read_text(encoding='utf-8')
-    match = re.search(r'^version=(.+)$', text, re.MULTILINE)
-    assert match, 'pynsist.cfg has no version'
-    return match.group(1).strip()
+    return _pynsist_value('[Application]', 'version')
+
+
+def _generator():
+    """Import contrib/win32/generate-pynsist-config.py by path."""
+    import importlib.util
+
+    path = REPO_ROOT / 'contrib' / 'win32' / 'generate-pynsist-config.py'
+    spec = importlib.util.spec_from_file_location('generate_pynsist_config', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_the_version_is_the_forks_own():
@@ -59,3 +88,38 @@ def test_the_version_is_a_release_number():
     version = _builtin_version()
 
     assert re.fullmatch(r'\d+\.\d+\.\d+', version), version
+
+
+def test_the_generated_installer_config_carries_the_application_version():
+    """`garden pynsist` builds from the generated file, not from pynsist.cfg."""
+    generator = _generator()
+    source = (REPO_ROOT / 'pynsist.cfg').read_text(encoding='utf-8')
+
+    generated = generator.substitute(source, '9.9.9')
+
+    assert _pynsist_value('[Application]', 'version', text=generated) == '9.9.9'
+
+
+def test_the_generated_installer_config_keeps_the_python_version():
+    """Regression: a plain `sed -e 's/^version=.*/'` rewrites both version keys.
+
+    pynsist then rejects the config with "'1.0.0' is not valid for py_version"
+    and the Windows installer job fails.
+    """
+    generator = _generator()
+    source = (REPO_ROOT / 'pynsist.cfg').read_text(encoding='utf-8')
+    python_version = _pynsist_value('[Python]', 'version', text=source)
+
+    generated = generator.substitute(source, '9.9.9')
+
+    assert _pynsist_value('[Python]', 'version', text=generated) == python_version
+
+
+def test_the_generator_changes_nothing_else():
+    """Every other line, comments included, is passed through untouched."""
+    generator = _generator()
+    source = (REPO_ROOT / 'pynsist.cfg').read_text(encoding='utf-8')
+
+    generated = generator.substitute(source, _builtin_version())
+
+    assert generated == source

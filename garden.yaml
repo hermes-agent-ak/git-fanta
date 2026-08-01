@@ -131,9 +131,10 @@ trees:
         # pynsist cannot interpolate its version, so it is substituted from
         # fanta/_version.py here. The generated file has to sit next to
         # pynsist.cfg because every path inside it is relative to that
-        # directory.
-        sed -e 's/^version=.*/version=${version-digits}/' \
-            pynsist.cfg >pynsist.generated.cfg
+        # directory. Do not inline this as a sed expression: pynsist.cfg has
+        # two "version=" keys and rewriting [Python] version breaks the build.
+        ${PYTHON} contrib/win32/generate-pynsist-config.py \
+            pynsist.cfg pynsist.generated.cfg
         pynsist "$@" pynsist.generated.cfg
         rm -f pynsist.generated.cfg
         rm -rf docs/html
