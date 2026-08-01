@@ -8,8 +8,14 @@ status: open
 **Branch:** commit onto whatever branch is checked out when you start. **Never onto `main`** —
 check with `git rev-parse --abbrev-ref HEAD` before Task 1 and create a feature branch first if it
 says `main`. This plan does not switch branches.
-**Affects:** `cola/widgets/dag.py` (four lines) and `cola/sequenceeditor.py` (a new helper plus
+**Affects:** `fanta/widgets/dag.py` (four lines) and `fanta/sequenceeditor.py` (a new helper plus
 three call sites), with a new test file for the second one.
+
+> **The Python package is `fanta/`, not `cola/`.** It was renamed on 2026-08-01 by
+> `docs/plans/2026-08-01-paint-performance-and-fanta-module.md`, which is completed and already in
+> this branch's history. `import fanta`, `fanta/widgets/dag.py`, `pytest … fanta test`. A stale
+> `cola/` directory holding nothing but `__pycache__` may still be lying around in a working copy —
+> it is not the package, and passing it to `pytest` collects nothing.
 
 ---
 
@@ -42,29 +48,32 @@ relative to it.
 | Written in the plan | Replace with, if that does not run |
 |---|---|
 | `python3 -B -m pytest …` | `env3/bin/python -B -m pytest …`, as soon as `env3/` exists |
-| `garden fmt` | `cercis bin bin/git-* cola test extras/sphinxtogithub` followed by `isort --force-single-line-imports --py=39 --no-lines-before=STDLIB bin bin/git-* cola test extras/sphinxtogithub` |
-| `garden check/fmt` | `cercis --check bin bin/git-* cola test extras/sphinxtogithub` |
+| `garden fmt` | `cercis bin bin/git-* fanta test extras/sphinxtogithub` followed by `isort --force-single-line-imports --py=39 --no-lines-before=STDLIB bin bin/git-* fanta test extras/sphinxtogithub` |
+| `garden check/fmt` | `cercis --check bin bin/git-* fanta test extras/sphinxtogithub` |
+
+Those two substitutions are the exact commands `garden.yaml` runs; check them against it if in doubt.
 
 Standard test command:
 
 ```bash
-QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q cola test
+QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q fanta test
 ```
 
 ---
 
 ## 1. What is being built
 
-Every sorting site in the package was inventoried and measured. **Forty-seven** call sites; eight
-of them are inside `cola/polib.py`, a vendored MIT-licensed third-party library that is not ours to
-touch. Of the remaining thirty-nine, exactly **two** are worth changing — and in both cases the fix
+Every sorting site in the package was inventoried and measured. **Forty-seven** call sites; six
+of them are inside `fanta/polib.py`, a vendored MIT-licensed third-party library that is not ours to
+touch. Of the remaining forty-one, exactly **two** are worth changing — and in both cases the fix
 is *not to sort*, not to sort differently:
 
 1. **`_color_contrast()` sorts two floating point numbers** to find out which is larger
-   (`cola/widgets/dag.py`). It is the single most-called function in the application: 24 596 calls
-   in one uncached repaint of 30 history rows. A comparison does the same job.
+   (`fanta/widgets/dag.py`). Every colour search on the paint path runs through it — 24 596 calls
+   in one *uncached* repaint of 30 history rows. A comparison does the same job. Since the paint
+   caches landed it only runs on a cache miss; see §2.4 before you quote any repaint number.
 2. **The rebase editor looks up a row number with `list.index()`, once per selected row**
-   (`cola/sequenceeditor.py`). That is O(rows × selection). One pass over the rows answers it for
+   (`fanta/sequenceeditor.py`). That is O(rows × selection). One pass over the rows answers it for
    every selected item at once. Measured on a 2000-commit rebase with 200 rows selected: **18.9 ms
    → 0.41 ms**, i.e. one arrow-key press stops stuttering.
 
@@ -95,32 +104,35 @@ at all when a comparison or a `min()` answers the question, and not rebuilding a
 |---|---|
 | Replace Timsort anywhere? | **No.** See the table above. Every remaining `sorted()`/`.sort()` in the package is Timsort over data that is either tiny or already nearly ordered, which is Timsort's best case. |
 | `_color_contrast`: `max()`/`min()` or a branch? | **A branch.** Measured on the sorting step alone: `sorted()` 365 ns, `max()`/`min()` 226 ns, a branch 109 ns. `max`/`min` are two more C calls and two more luminance-sized temporaries for no gain. |
-| How much does that actually buy? | Honest number: **1.21x on the function**, and **1.06x on an uncached 30-row repaint** — median 161.4 ms → 151.9 ms over 18 interleaved samples each. It is free and it is the hottest function in the program, but it is not the headline the microbenchmark alone suggests. See §2.4 for how it interacts with the caching plan. |
+| How much does that actually buy? | Honest number: **1.21x on the function**, and **1.06x on an uncached 30-row repaint** — median 161.4 ms → 151.9 ms over 18 interleaved samples each. It is free, and it is the hottest function in the program on a cache miss — but the paint caches have since landed, so a miss is only the first paint and a theme change. **§2.4 is not optional reading; it is what keeps this commit message honest.** |
 | Key the rebase row map on the item? | **Impossible, and this is the trap of this plan.** `RebaseTreeWidgetItem.__hash__` returns `self.oid`, a **string**, so the item cannot be a dict key or a set member at all — `TypeError: __hash__ method should return an integer`. The map is keyed on `id()`. |
 | Fix `__hash__` instead? | **No.** That is a separate defect with its own blast radius, and this plan is explicitly the quick, isolated one. Keying on `id()` needs no change to the class and is exactly what `index()` already does, because `__eq__` is `self is other`. |
-| Why does this need a new test file? | `cola/sequenceeditor.py` has **no test coverage at all** — verified by grep. Nineteen characterization tests go in first, against the current behaviour, and the change has to leave every one of them green. |
+| Why does this need a new test file? | `fanta/sequenceeditor.py` has **no test coverage at all** — verified by grep. Nineteen characterization tests go in first, against the current behaviour, and the change has to leave every one of them green. |
+| Annotate the new helper? | **Yes.** `fanta/sequenceeditor.py` carries `from __future__ import annotations` and every `def` in it is annotated. `mypy` is configured loosely enough not to force it, but an unannotated helper in that file is idiom drift. Step 2.2 spells the signature out. |
 
 ## 2. Ground truth — all measured
 
 ### 2.1 The inventory
 
 ```bash
-grep -rn "\bsorted(\|\.sort(\|heapq\|bisect\|cmp_to_key\|nsmallest\|nlargest" --include="*.py" cola/
+grep -rn "\bsorted(\|\.sort(\|heapq\|bisect\|cmp_to_key\|nsmallest\|nlargest" --include="*.py" fanta/
 ```
 
-47 hits. Grouped:
+47 hits, and **every one of them is a `sorted()` or a `.sort()`** — the package contains no
+`heapq`, no `bisect`, no `cmp_to_key`, no `nsmallest`/`nlargest` at all. Grouped, and the counts
+sum to 47:
 
 | group | count | verdict |
 |---|---|---|
-| `cola/polib.py` | 8 | **Vendored third party** (MIT, see `extras/polib/LICENSE`). Not ours. |
-| Sorting git output — `gitcmds.py` (7), `utils.py` (2), `gitcfg.py` (2), `models/` (3), `browse.py` (2), `guicmds.py` (1) | 17 | Plain Timsort over lists of paths or refs, once per refresh. Correct as written. |
-| Widget-level sorts — `completion.py` (4), `bookmarks.py`, `startup.py`, `toolbar.py`, `diff.py` (2), `status.py`, `spellcheck.py` | 10 | Measured, see §2.3. None worth changing. |
-| The inline graph — `dag.py` (6) | 6 | One is worth changing (§2.2); the rest are measured in §2.3. |
-| The rebase editor — `sequenceeditor.py` (4) | 4 | Three are worth changing (§2.2). |
+| `fanta/polib.py` | 6 | **Vendored third party** (MIT, see `extras/polib/LICENSE`). Not ours. |
+| Sorting git output — `gitcmds.py` (9), `utils.py` (2), `gitcfg.py` (2), `models/main.py` (1), `models/browse.py` (1), `models/selection.py` (1), `widgets/browse.py` (1), `guicmds.py` (1) | 18 | Plain Timsort over lists of paths or refs, once per refresh. Correct as written. |
+| Widget-level sorts — `completion.py` (4), `diff.py` (2), `bookmarks.py` (1), `startup.py` (1), `toolbar.py` (1), `status.py` (1), `spellcheck.py` (1) | 11 | Measured, see §2.3. None worth changing. |
+| The inline graph — `widgets/dag.py` | 7 | One is worth changing (§2.2); the other six are in §2.3. |
+| The rebase editor — `sequenceeditor.py` | 5 | Four lines across three statements are worth changing (§2.2); the fifth is in §2.3. |
 
 ### 2.2 The two that are worth changing
 
-**`_color_contrast`**, `cola/widgets/dag.py`:
+**`_color_contrast`**, `fanta/widgets/dag.py`:
 
 ```python
 def _color_contrast(first, second):
@@ -142,7 +154,7 @@ answer "which of these two floats is bigger". Measured:
 Whole function, luminance included: 2153 ns → 1777 ns, **1.21x**. In the application, on an
 uncached 30-row repaint, interleaved A/B with 18 samples each: median **161.4 ms → 151.9 ms**.
 
-**The rebase row lookup**, `cola/sequenceeditor.py`, in both `shift_up()` and `shift_down()`:
+**The rebase row lookup**, `fanta/sequenceeditor.py`, in both `shift_up()` and `shift_down()`:
 
 ```python
 sel_idx = sorted([all_items.index(item) for item in sel_items])
@@ -179,30 +191,45 @@ indices). It is not hot; it is in this plan because it is three lines away and o
 | `reversed(sorted(rows))` → `sorted(rows, reverse=True)` in `diff.py` and `status.py` | 37.7 µs → 33.6 µs for 400 rows, and these lists hold the *selected* rows of a status view | 1.12x on a list of a handful of entries. Not worth a diff |
 | `list(sorted(values))` → `sorted(values)` in `models/selection.py` | 33.4 µs → 32.8 µs | Inside the noise |
 | The two sorts inside `_prepare_labels()` | 0.31 µs and 0.44 µs of the 7.9 µs the whole function costs | Both sort one to three refs |
+| The two sorts inside `commit_message_file_spans()` — `sorted(needles, key=…)` and `spans.sort()` | Over the paths of a single commit, once per description render | **Load-bearing, not incidental.** The first orders needles longest-first so a full path claims its range before its basename can; the second orders the result. Changing either changes behaviour |
 | `sorted(node.children, …)` in the graph layout, `commits.sort(key=…)` in `sort_by_generation` | Timsort over the commit list, once per layout; `build_graph` for 1000 commits is 5-12 ms in total | Correct as written |
+| `add_remark()` in `sequenceeditor.py` — `tuple(sorted(set(self.remarks + (remark,))))` | A handful of single-character remarks on one item | Deduplicates and orders in one expression. Nothing to win |
 | `heapq` / `bisect` for any of the above | — | Nothing here needs a partial sort, a priority queue or an insertion point. `heapq` measured 2.5x slower than `sorted()` for a full ordering |
 
-### 2.4 How this interacts with the caching plan
+### 2.4 The paint caches already landed — what Task 1 is actually worth
 
-`docs/plans/2026-08-01-paint-performance-and-fanta-module.md` memoizes `inline_graph_style()` and
-`readable_chip_fills()`, which is what makes `_color_contrast` stop being called 24 596 times per
-repaint in the first place.
+`docs/plans/2026-08-01-paint-performance-and-fanta-module.md` is **completed and merged**. Commits
+`dcf59e04` and `41315c44` memoized `inline_graph_style()`, `readable_chip_fills()` and the best-
+contrast search, taking a 30-row repaint from 156 ms to 6.0 ms. That is what stopped
+`_color_contrast` from being called 24 596 times per repaint.
 
-**Both changes are correct and neither depends on the other**, but the accounting has to be honest:
+There are exactly four `_color_contrast` call sites, and **all four are reachable only through a
+cache miss**:
 
-- Executed **before** that plan, Task 1 is worth ~9 ms of a 160 ms repaint.
-- Executed **after** it, `_color_contrast` only runs on a cache miss — the first paint and every
-  theme change — so the same 9 ms is saved there and almost nothing during scrolling.
+| call site | reached from |
+|---|---|
+| `_compute_best_contrast()` | `_best_contrast()`, behind `_BEST_CONTRAST_CACHE` |
+| `readable_chip_fill()` | only called from `_compute_readable_chip_fills()` |
+| `_compute_readable_chip_fills()` | `readable_chip_fills()`, behind `_READABLE_CHIP_FILLS_CACHE` |
+| `inline_graph_style()` | behind `_INLINE_GRAPH_STYLE_CACHE` |
 
-Either way the function gets cheaper and nothing gets slower. Task 2 is unaffected by that plan
-entirely; the rebase editor has no colours in it.
+**So Task 1 buys ~9 ms on a cache miss and nothing at all while scrolling.** A miss is the first
+paint after startup and every theme change. That is still worth four lines — the function gets
+cheaper, nothing gets slower, and the `sorted()` was pure overhead either way — but the honest
+headline is "the first paint", not "every repaint".
+
+> **Do not repeat the 161.4 ms → 151.9 ms A/B as if it described scrolling.** It was measured
+> before the caches existed. It is still the correct number for an *uncached* repaint, which is
+> what Task 1's commit message says, and nothing more than that.
+
+Task 2 is unaffected by that plan entirely; the rebase editor has no colours in it.
 
 ## 3. Non-goals
 
 - **No new sorting algorithm anywhere.** §1 has the numbers.
 - **No `heapq`, no `bisect`, no `functools.cmp_to_key`.** Nothing here needs a partial ordering or
   an insertion point.
-- **No change to `cola/polib.py`.** Vendored third-party code.
+- **No change to `fanta/polib.py`.** Vendored third-party code.
 - **No fix for `RebaseTreeWidgetItem.__hash__`,** although it is broken: it returns a string, so the
   class is unhashable. Task 2 pins that down in a test and routes around it. Repairing it means
   auditing whatever might start hashing rebase items, which is not a quick fix.
@@ -216,11 +243,11 @@ entirely; the rebase editor has no colours in it.
 
 | # | Trap | Evidence |
 |---|---|---|
-| **F1** | **`RebaseTreeWidgetItem` cannot be a dict key or a set member.** `__hash__` returns `self.oid`, a string, so `hash(item)` raises `TypeError: __hash__ method should return an integer`. A row map keyed on the item — the obvious implementation — crashes the rebase editor the first time it is used. Key on `id(item)`. | Measured: `{item: 0}` → `TypeError: cannot use 'cola.sequenceeditor.RebaseTreeWidgetItem' as a dict key` |
-| **F2** | **`__eq__` is `self is other`.** That is what makes an `id()` map equivalent to `list.index()`: both find the same row even when two items carry the same oid and summary. If `__eq__` were value-based the two would disagree on duplicates. | `cola/sequenceeditor.py`, `RebaseTreeWidgetItem.__eq__`; asserted in `test_the_rebase_item_compares_by_identity` |
-| **F3** | **`cola/sequenceeditor.py` has no tests at all.** `grep -rln "sequenceeditor\|RebaseTreeWidget" test/` finds nothing. Task 2 writes nineteen characterization tests *first* and they must pass against the **unchanged** code — a RED here would mean the tests are wrong, not the code. | Measured: `19 passed` before any production edit |
-| **F4** | **`RebaseTreeWidget.__init__` takes three positional arguments** — `(context, comment_char, parent)` — and all three are required. `RebaseTreeWidget(None, None)` raises `TypeError: missing 1 required positional argument: 'parent'`. A `None` context is fine for these tests; nothing in the code paths under test touches it. | Measured |
-| **F5** | **The suite is not green on a clean checkout in this environment.** Four tests in `test/git_test.py` fail before any change and are unrelated to this work. **Do not "fix" them.** | Measured: `4 failed, 794 passed` |
+| **F1** | **`RebaseTreeWidgetItem` cannot be a dict key or a set member.** `__hash__` returns `self.oid`, a string, so `hash(item)` raises `TypeError: __hash__ method should return an integer`. A row map keyed on the item — the obvious implementation — crashes the rebase editor the first time it is used. Key on `id(item)`. | Measured: `{item: 0}` → `TypeError: cannot use 'fanta.sequenceeditor.RebaseTreeWidgetItem' as a dict key` |
+| **F2** | **`__eq__` is `self is other`.** That is what makes an `id()` map equivalent to `list.index()`: both find the same row even when two items carry the same oid and summary. If `__eq__` were value-based the two would disagree on duplicates. | `fanta/sequenceeditor.py`, `RebaseTreeWidgetItem.__eq__`; asserted in `test_the_rebase_item_compares_by_identity` |
+| **F3** | **`fanta/sequenceeditor.py` has no tests at all.** `grep -rln "sequenceeditor\|RebaseTreeWidget" test/` finds nothing. Task 2 writes nineteen characterization tests *first* and they must pass against the **unchanged** code — a RED here would mean the tests are wrong, not the code. | Measured: `19 passed` before any production edit |
+| **F4** | **`RebaseTreeWidget.__init__` takes three positional arguments** — `(context, comment_char, parent)` — and all three are required. `RebaseTreeWidget(None, None)` raises `TypeError: missing 1 required positional argument: 'parent'`. A `None` context is fine for these tests: `move()` reaches only `decorate()` and `validate()`, and neither reads `self.context`. | Measured |
+| **F5** | **The suite is not green on a clean checkout in this environment.** Four tests in `test/git_test.py` fail before any change and are unrelated to this work. **Do not "fix" them.** | Measured: `4 failed, 811 passed`, stable over three consecutive runs |
 | **F6** | **A Qt teardown segfault appears roughly once in a dozen full-suite runs**, with no failing test, and does not reproduce. Re-run once. It repeats at the same test only if something is genuinely broken. The new test file was run five times in a row without a repeat. | Measured during this plan's development |
 | **F7** | **`pytest.ini` sets `--doctest-modules`.** A `>>>` in a new docstring becomes a test. None of the docstrings here contain one. | `pytest.ini` |
 
@@ -228,9 +255,9 @@ entirely; the rebase editor has no colours in it.
 
 | Exists | Where | Role |
 |---|---|---|
-| `_color_luminance()` | `cola/widgets/dag.py` | Untouched. Task 1 only changes how its two results are compared. |
+| `_color_luminance()` | `fanta/widgets/dag.py` | Untouched. Task 1 only changes how its two results are compared. |
 | The contrast assertions | `test/widgets_dag_history_test.py` — `test_chip_fills_*`, `test_head_accent_stays_visible_*`, `test_draw_labels_makes_every_adversarial_chip_*` | **Already** cover `_color_contrast` against thirteen palettes. Task 1 adds no new colour test; those are the proof it did not change behaviour. |
-| `standard.TreeMixin.items()` / `selected_items()` | `cola/widgets/standard.py` | The two accessors the rebase helper takes its arguments from. Untouched. |
+| `standard.TreeMixin.items()` / `selected_items()` | `fanta/widgets/standard.py` | The two accessors the rebase helper takes its arguments from. Untouched. |
 | `qapp` / `managed_qobject` fixtures | `test/widgets_history_checkout_test.py` | The pattern the new test file copies verbatim, as this repository requires. |
 
 ---
@@ -264,27 +291,35 @@ If that fails: **STOP and report.** `cercis` and `isort` **must** be available.
 ### Verification
 
 ```bash
-QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q cola test 2>&1 | tail -7
+QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q fanta test 2>&1 | tail -7
 ```
 
-**Expected, exactly:**
+**Expected:**
 
 ```
 FAILED test/git_test.py::test_stdout - assert 69 == 0
 FAILED test/git_test.py::test_stderr - assert 0 == 69
 FAILED test/git_test.py::test_stdout_and_stderr - assert 0 == 69
 FAILED test/git_test.py::test_it_doesnt_deadlock - assert 0 == 69
-4 failed, 794 passed
+4 failed, 811 passed
 ```
 
-If anything outside `test/git_test.py` fails, **stop and report**.
+**The check that matters is "no failure outside `test/git_test.py`", not the exact number.** If
+anything else fails, **stop and report**. The pass count can come up one short on a run that hit
+the teardown flake of trap **F6**; re-run once before treating a one-off `810` as a problem. What
+must hold at every step is the *delta*: Task 2 adds exactly 19 and nothing else moves.
+
+> **If you see `ERROR: file or directory not found: cola`,** you typed `cola` where the package is
+> `fanta`. If you see a number well below 811, you pointed `pytest` at a leftover `cola/` directory
+> that holds only `__pycache__`: `pytest.ini` sets `--doctest-modules`, so a wrong package path
+> silently drops every module doctest instead of failing. Re-run with `fanta test`.
 
 | After task | new tests | `passed` | `failed` |
 |---|---|---|---|
-| 0 (baseline) | — | 794 | 4 |
-| 1 — the contrast comparison | 0 | 794 | 4 |
-| 2 — the rebase row lookup | +19 | 813 | 4 |
-| 3 — documentation | 0 | 813 | 4 |
+| 0 (baseline) | — | 811 | 4 |
+| 1 — the contrast comparison | 0 | 811 | 4 |
+| 2 — the rebase row lookup | +19 | 830 | 4 |
+| 3 — documentation | 0 | 830 | 4 |
 
 ---
 
@@ -302,7 +337,7 @@ If anything outside `test/git_test.py` fails, **stop and report**.
 **Anchor:**
 
 ```bash
-grep -n "^def _color_contrast(first, second):$" cola/widgets/dag.py
+grep -n "^def _color_contrast(first, second):$" fanta/widgets/dag.py
 ```
 
 **Expected:** exactly one hit. Replace that function — the five lines from `def _color_contrast`
@@ -314,7 +349,8 @@ def _color_contrast(first, second):
 
     sorted() over a two-element tuple allocates a list and calls into Timsort
     to answer "which of these is larger"; measured at 365 ns against 109 ns for
-    the comparison. This is the most-called function in the application -
+    the comparison. Every color search on the paint path runs through here, so
+    this is the hottest function in the program whenever those caches miss -
     24596 calls in one uncached repaint of 30 history rows.
     """
     lighter = _color_luminance(first)
@@ -331,12 +367,12 @@ def _color_contrast(first, second):
 
 ```bash
 garden fmt
-QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q cola test 2>&1 | tail -7
+QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q fanta test 2>&1 | tail -7
 git diff --stat
 ```
 
-**Expected:** **794 passed**, the same four baseline failures, **no test file modified** — the diff
-touches `cola/widgets/dag.py` and nothing else. In particular these must all still pass, because
+**Expected:** **811 passed**, the same four baseline failures, **no test file modified** — the diff
+touches `fanta/widgets/dag.py` and nothing else. In particular these must all still pass, because
 they are what proves the contrast maths is unchanged:
 
 - `test_chip_fills_stay_readable_on_a_selected_row`
@@ -355,10 +391,15 @@ which of two floats is larger. That allocates a list and enters Timsort;
 measured at 365 ns against 109 ns for the comparison, and 2153 ns against
 1777 ns for the whole function including the luminance work.
 
-It is the most-called function in the application - 24596 calls in one
-uncached repaint of 30 history rows - so it is worth the four lines: an
-interleaved A/B over 18 samples each put the median repaint at 161.4 ms
-before and 151.9 ms after.
+Every color search on the paint path goes through it, so it is the
+hottest function in the program on a cache miss - 24596 calls in one
+uncached repaint of 30 history rows. An interleaved A/B over 18 samples
+each put that uncached repaint at 161.4 ms before and 151.9 ms after.
+
+Since the paint caches landed in 41315c44 a miss only happens on the
+first paint and on a theme change; while scrolling, the caches answer and
+this function is not called at all. The four lines are still worth it -
+nothing gets slower and the sorted() was pure overhead.
 
 Pure refactor. The thirteen palette tests that exercise the contrast
 maths are untouched and still green."
@@ -373,7 +414,7 @@ maths are untouched and still green."
 
 ### Step 2.1 (characterization) — Write the tests against the **unchanged** code
 
-`cola/sequenceeditor.py` has no tests (trap **F3**). Create `test/sequenceeditor_move_test.py`
+`fanta/sequenceeditor.py` has no tests (trap **F3**). Create `test/sequenceeditor_move_test.py`
 with exactly this content:
 
 ```python
@@ -388,8 +429,8 @@ import sys
 
 import pytest
 
-from cola.sequenceeditor import RebaseTreeWidget
-from cola.sequenceeditor import RebaseTreeWidgetItem
+from fanta.sequenceeditor import RebaseTreeWidget
+from fanta.sequenceeditor import RebaseTreeWidgetItem
 from qtpy import QtCore
 from qtpy import QtTest
 from qtpy import QtWidgets
@@ -549,7 +590,8 @@ def test_move_reorders_the_rows(qapp, managed_qobject, src_idxs, dst_idx, expect
 QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q test/sequenceeditor_move_test.py 2>&1 | tail -3
 ```
 
-**Expected:** `19 passed`.
+**Expected:** `19 passed`. The file is already in `cercis` and `isort` shape, so `garden fmt` will
+not rewrite it.
 
 > **These are characterization tests, not a RED step** (trap **F3**). They describe what the code
 > already does, so they pass immediately. A failure here means the test is wrong — **stop and
@@ -563,14 +605,17 @@ QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q test/sequenceeditor
 **Anchor:**
 
 ```bash
-grep -n "^class RebaseTreeWidget(standard.DraggableTreeWidget):$" cola/sequenceeditor.py
+grep -n "^class RebaseTreeWidget(standard.DraggableTreeWidget):$" fanta/sequenceeditor.py
 ```
 
 **Expected:** exactly one hit. Insert **directly above it** (two blank lines stay between the new
 function and the class):
 
 ```python
-def _selected_rows(all_items, selected_items):
+def _selected_rows(
+    all_items: list[RebaseTreeWidgetItem],
+    selected_items: list[RebaseTreeWidgetItem],
+) -> list[int]:
     """Return the row number of every selected item.
 
     all_items.index(item) walks the list once per selected row, which is
@@ -585,10 +630,15 @@ def _selected_rows(all_items, selected_items):
 
 ```
 
+> The annotations reference `RebaseTreeWidgetItem`, which is defined **later** in the file. That is
+> fine and needs no quoting: `fanta/sequenceeditor.py` starts with `from __future__ import
+> annotations`, so annotations are never evaluated. The rest of the module annotates the same way —
+> `toggle_remark_of_items()` already takes a `list[RebaseTreeWidgetItem]`.
+
 **Anchor:**
 
 ```bash
-grep -n "        sel_idx = sorted(\[all_items.index(item) for item in sel_items\])" cola/sequenceeditor.py
+grep -n "        sel_idx = sorted(\[all_items.index(item) for item in sel_items\])" fanta/sequenceeditor.py
 ```
 
 **Expected:** **two** hits — one in `shift_down()`, one in `shift_up()`. Replace **both** lines
@@ -608,7 +658,7 @@ with:
 **Anchor:**
 
 ```bash
-grep -n "        src_base = sorted(src_idxs)\[0\]" cola/sequenceeditor.py
+grep -n "        src_base = sorted(src_idxs)\[0\]" fanta/sequenceeditor.py
 ```
 
 **Expected:** exactly one hit. Replace that line **and the one below it** —
@@ -631,10 +681,10 @@ grep -n "        src_base = sorted(src_idxs)\[0\]" cola/sequenceeditor.py
 ```bash
 garden fmt
 QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q test/sequenceeditor_move_test.py 2>&1 | tail -3
-QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q cola test 2>&1 | tail -7
+QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q fanta test 2>&1 | tail -7
 ```
 
-**Expected:** `19 passed` for the new file — **the same nineteen, unchanged** — and 794 → **813
+**Expected:** `19 passed` for the new file — **the same nineteen, unchanged** — and 811 → **830
 passed** for the whole suite, with the four baseline failures.
 
 If the full-suite run dies in a Qt teardown segfault with no failing test, re-run it once
@@ -673,13 +723,47 @@ commit."
 
 ### Step 3.1 — `docs/plans/README.md`
 
-Add one row to the table, at the end of the existing rows:
+**The table already has a row for this plan.** Do not add a second one — **replace** it.
+
+**Anchor:**
+
+```bash
+grep -n "2026-08-01-sorting-hot-paths.md" docs/plans/README.md
+```
+
+**Expected:** exactly one hit, reading `| [2026-08-01-sorting-hot-paths.md](…) | **open** | — |`.
+Replace that whole line with:
 
 ```markdown
 | [2026-08-01-sorting-hot-paths.md](2026-08-01-sorting-hot-paths.md) | completed | *fill in the branch* → *fill in the last commit* |
 ```
 
 Fill both placeholders from `git rev-parse --abbrev-ref HEAD` and `git rev-parse --short HEAD`.
+
+While you are in this file, one row above is stale and belongs to the plan this one builds on:
+
+**Anchor:**
+
+```bash
+grep -n "2026-08-01-paint-performance-and-fanta-module.md" docs/plans/README.md
+```
+
+**Expected:** exactly one hit, still marked `**open**`. That plan's own frontmatter says
+`status: completed`, so the index contradicts it. Read the branch and the commit out of that
+frontmatter rather than guessing them —
+
+```bash
+head -10 docs/plans/2026-08-01-paint-performance-and-fanta-module.md
+```
+
+— and replace the line with the same shape as every other completed row, substituting its
+`implementation_branch` and `implementation_head`:
+
+```markdown
+| [2026-08-01-paint-performance-and-fanta-module.md](2026-08-01-paint-performance-and-fanta-module.md) | completed | `<implementation_branch>` → `<implementation_head>` |
+```
+
+Do not touch that plan's frontmatter. Its record is its own; this step only repairs the index.
 
 ### Step 3.2 — The frontmatter of this plan
 
@@ -724,8 +808,8 @@ raises `TypeError` and the item cannot be a dict key or a set member. `__eq__` i
 so anything that needs a lookup table keys on `id(item)` — that finds the same row `list.index()`
 would.
 
-**`cola/polib.py` is vendored third-party code** (MIT, `extras/polib/LICENSE`). It holds eight of
-the package's sorting call sites and none of them are ours to change.
+**`fanta/polib.py` is vendored third-party code** (MIT, `extras/polib/LICENSE`). It holds six of
+the package's forty-seven sorting call sites and none of them are ours to change.
 
 ```
 
@@ -749,9 +833,11 @@ and in both cases the fix was to stop sorting rather than to sort differently.
 
 **Decisions that later work must not undo:**
 
-- **`_color_contrast()` compares, it does not sort.** It is the most-called function in the
-  program. Do not "tidy" it back into a `sorted()` or a `max()`/`min()` pair: 365 ns, 226 ns and
-  109 ns respectively for the same answer.
+- **`_color_contrast()` compares, it does not sort.** Do not "tidy" it back into a `sorted()` or a
+  `max()`/`min()` pair: 365 ns, 226 ns and 109 ns respectively for the same answer. Every colour
+  search on the paint path reaches it, so it is the hottest function in the program on a cache
+  miss — but since section 11 landed, a miss is only the first paint and a theme change. Do not
+  quote its saving as a per-repaint number.
 - **The rebase row lookup keys on `id()`.** `RebaseTreeWidgetItem.__hash__` returns a string, so
   the item cannot be a dict key. `__eq__` is identity, which is what makes `id()` equivalent to
   what `list.index()` found.
@@ -760,7 +846,7 @@ and in both cases the fix was to stop sorting rather than to sort differently.
 - **`completion.filter_matches()` was measured and left alone.** Folding its second `lower()` pass
   into a decorate-sort-undecorate loop is 0.87x — slower, because the list comprehension it
   replaces runs in C.
-- **`test/sequenceeditor_move_test.py` is the first coverage `cola/sequenceeditor.py` ever had.**
+- **`test/sequenceeditor_move_test.py` is the first coverage `fanta/sequenceeditor.py` ever had.**
   Its nineteen tests are characterization tests: they described the behaviour before the change
   and were not touched by it.
 
@@ -769,7 +855,7 @@ and in both cases the fix was to stop sorting rather than to sort differently.
 ### Verification
 
 ```bash
-QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q cola test 2>&1 | tail -7
+QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q fanta test 2>&1 | tail -7
 git status --short
 ```
 
@@ -796,11 +882,11 @@ __hash__ returns a string."
 
 ```bash
 git log --oneline -4
-QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q cola test 2>&1 | tail -7
+QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q fanta test 2>&1 | tail -7
 garden check/fmt
 ```
 
-Three commits, `813 passed` with the four `test/git_test.py` failures, formatting clean.
+Three commits, `830 passed` with the four `test/git_test.py` failures, formatting clean.
 
 **Do not push and do not open a pull request.** Report what was done, what the final test output
 was, and anything you had to deviate from.
