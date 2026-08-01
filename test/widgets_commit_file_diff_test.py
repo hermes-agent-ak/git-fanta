@@ -6,10 +6,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cola.widgets.diff import CommitFileDiffWindow
-from cola.widgets.diff import DiffInfoTask
-from cola.widgets.diff import DiffRangeTask
-from cola.widgets.diff import show_commit_file_diff
+from fanta.widgets.diff import CommitFileDiffWindow
+from fanta.widgets.diff import DiffInfoTask
+from fanta.widgets.diff import DiffRangeTask
+from fanta.widgets.diff import show_commit_file_diff
 from qtpy import QtCore
 from qtpy import QtTest
 from qtpy import QtWidgets

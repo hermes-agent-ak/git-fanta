@@ -7,11 +7,11 @@ from unittest.mock import patch
 
 import pytest
 
-from cola import core
-from cola import git
-from cola import gitcfg
-from cola import gitcmds
-from cola.models import main
+from fanta import core
+from fanta import git
+from fanta import gitcfg
+from fanta import gitcmds
+from fanta.models import main
 
 # prevent unused imports lint errors.
 assert patch is not None

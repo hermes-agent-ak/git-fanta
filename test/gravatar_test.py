@@ -3,10 +3,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cola import gravatar
-from cola.compat import ustr
-from cola.gravatar import Gravatar
-from cola.gravatar import GravatarLabel
+from fanta import gravatar
+from fanta.compat import ustr
+from fanta.gravatar import Gravatar
+from fanta.gravatar import GravatarLabel
 from qtpy import QtGui
 from qtpy import QtWidgets
 

@@ -8,24 +8,24 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import Callable
 
-from cola import app  # prints a message if Qt cannot be found
-from cola import compat
-from cola import core
-from cola import difftool
-from cola import gitcmds
-from cola import hotkeys
-from cola import icons
-from cola import qtutils
-from cola import utils
-from cola.i18n import N_
-from cola.models import dag
-from cola.models import prefs
-from cola.qtutils import SimpleTask
-from cola.widgets import defs
-from cola.widgets import diff
-from cola.widgets import filelist
-from cola.widgets import standard
-from cola.widgets import text
+from fanta import app  # prints a message if Qt cannot be found
+from fanta import compat
+from fanta import core
+from fanta import difftool
+from fanta import gitcmds
+from fanta import hotkeys
+from fanta import icons
+from fanta import qtutils
+from fanta import utils
+from fanta.i18n import N_
+from fanta.models import dag
+from fanta.models import prefs
+from fanta.qtutils import SimpleTask
+from fanta.widgets import defs
+from fanta.widgets import diff
+from fanta.widgets import filelist
+from fanta.widgets import standard
+from fanta.widgets import text
 from qtpy import QtGui
 from qtpy import QtWidgets
 from qtpy.QtCore import Qt

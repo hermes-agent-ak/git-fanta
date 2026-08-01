@@ -11,17 +11,17 @@ from unittest.mock import Mock
 
 import pytest
 
-from cola import cmds
-from cola import qtutils
-from cola.interaction import Interaction
-from cola.models import dag as dag_model
-from cola.models import graph as graph_model
-from cola.widgets import defs
-from cola.widgets import standard
-from cola.widgets.dag import GRAPH_ROW_ROLE
-from cola.widgets.dag import CommitHistoryWidget
-from cola.widgets.main import HISTORY_INLINE_GRAPH_DEFAULT_VERSION
-from cola.widgets.main import MainView
+from fanta import cmds
+from fanta import qtutils
+from fanta.interaction import Interaction
+from fanta.models import dag as dag_model
+from fanta.models import graph as graph_model
+from fanta.widgets import defs
+from fanta.widgets import standard
+from fanta.widgets.dag import GRAPH_ROW_ROLE
+from fanta.widgets.dag import CommitHistoryWidget
+from fanta.widgets.main import HISTORY_INLINE_GRAPH_DEFAULT_VERSION
+from fanta.widgets.main import MainView
 from qtpy import QtCore
 from qtpy import QtGui
 from qtpy import QtTest
@@ -256,7 +256,7 @@ def _graph(commits):
 
 def _controlled_main(qapp, main_context, managed_qobject, monkeypatch, oids):
     ControlledReaderThread.instances = []
-    monkeypatch.setattr('cola.widgets.dag.ReaderThread', ControlledReaderThread)
+    monkeypatch.setattr('fanta.widgets.dag.ReaderThread', ControlledReaderThread)
     main_context.model.local_branches = ['main']
     main_context.model.remote_branches = []
     main_context.model.tags = []
@@ -455,7 +455,7 @@ def test_successful_initialize_loads_history_once_after_git_check_and_state_rest
         ))
 
     monkeypatch.setattr(MainView, 'init_state', restore_state)
-    monkeypatch.setattr('cola.widgets.main.version.git_version_str', git_version)
+    monkeypatch.setattr('fanta.widgets.main.version.git_version_str', git_version)
     monkeypatch.setattr(
         CommitHistoryWidget, 'load_if_stale', load_if_stale, raising=False
     )
@@ -478,9 +478,10 @@ def test_queued_model_update_before_git_check_uses_one_initial_request(
     qapp, main_context, managed_qobject, monkeypatch
 ):
     ControlledReaderThread.instances = []
-    monkeypatch.setattr('cola.widgets.dag.ReaderThread', ControlledReaderThread)
+    monkeypatch.setattr('fanta.widgets.dag.ReaderThread', ControlledReaderThread)
     monkeypatch.setattr(
-        'cola.widgets.main.version.git_version_str', lambda _context: 'git version test'
+        'fanta.widgets.main.version.git_version_str',
+        lambda _context: 'git version test',
     )
     main_context.model.local_branches = ['main']
     main_context.model.remote_branches = []
@@ -502,10 +503,10 @@ def test_failed_initialize_exits_without_loading_history(
     loads = []
     exits = []
     monkeypatch.setattr(
-        'cola.widgets.main.version.git_version_str', lambda _context: ''
+        'fanta.widgets.main.version.git_version_str', lambda _context: ''
     )
     monkeypatch.setattr(
-        'cola.widgets.main.Interaction.critical', lambda *_args, **_kwargs: None
+        'fanta.widgets.main.Interaction.critical', lambda *_args, **_kwargs: None
     )
     monkeypatch.setattr(main_context.app, 'exit', lambda code: exits.append(code))
     monkeypatch.setattr(
@@ -577,7 +578,7 @@ def test_refresh_reaches_hidden_history_before_missing_cwd_early_return(
     loads.clear()
     window.historydock.hide()
     monkeypatch.setattr(
-        'cola.widgets.main.core.getcwd',
+        'fanta.widgets.main.core.getcwd',
         lambda: (_ for _ in ()).throw(FileNotFoundError()),
     )
 
@@ -1333,7 +1334,7 @@ def test_mainview_close_waits_for_real_blocked_history_and_discards_pending(
         def get_worktree_commits(self):
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', BlockingReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', BlockingReader)
     main_context.browser_windows = []
     window = managed_qobject(MainView(main_context))
     history = window.historywidget

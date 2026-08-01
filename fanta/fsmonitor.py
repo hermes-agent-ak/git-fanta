@@ -574,7 +574,7 @@ def create(context: ApplicationContext) -> _Monitor:
     if not cfg.get('fanta.inotify', default=True):
         msg = N_(
             'File system change monitoring: disabled because'
-            ' "cola.inotify" is false.\n'
+            ' "fanta.inotify" is false.\n'
         )
         Interaction.log(msg)
     elif AVAILABLE == 'inotify':

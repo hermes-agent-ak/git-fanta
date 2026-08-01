@@ -1,6 +1,6 @@
 """Test interfaces used by the browser (git fanta browse)"""
-from cola import core
-from cola import gitcmds
+from fanta import core
+from fanta import gitcmds
 
 from . import helper
 from .helper import app_context

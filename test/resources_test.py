@@ -1,12 +1,12 @@
 from unittest.mock import patch
 
-from cola import resources
+from fanta import resources
 
 from . import helper
 
 
-@patch('cola.resources.compat')
-@patch('cola.resources.get_prefix')
+@patch('fanta.resources.compat')
+@patch('fanta.resources.get_prefix')
 def test_command_unix(mock_prefix, mock_compat):
     """Test the behavior of resources.command() on unix platforms"""
     mock_compat.WIN32 = False
@@ -21,8 +21,8 @@ def test_command_unix(mock_prefix, mock_compat):
     assert expect == actual
 
 
-@patch('cola.resources.compat')
-@patch('cola.resources.get_prefix')
+@patch('fanta.resources.compat')
+@patch('fanta.resources.get_prefix')
 def test_command_win32(mock_prefix, mock_compat):
     """Test the behavior of resources.command() on unix platforms"""
     mock_compat.WIN32 = True

@@ -6,9 +6,9 @@ import sys
 
 import pytest
 
-from cola.qtutils import get
-from cola.widgets.merge import Merge
-from cola.widgets.merge import local_merge
+from fanta.qtutils import get
+from fanta.widgets.merge import Merge
+from fanta.widgets.merge import local_merge
 from qtpy import QtCore
 from qtpy import QtTest
 from qtpy import QtWidgets

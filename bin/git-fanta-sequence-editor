@@ -3,7 +3,7 @@ import sys
 
 import _activate_fanta
 
-from cola import sequenceeditor
+from fanta import sequenceeditor
 
 if __name__ == '__main__':
     sys.exit(sequenceeditor.main())

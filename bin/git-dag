@@ -3,9 +3,9 @@ import sys
 
 import _activate_fanta
 
-from cola import dag
+from fanta import dag
 
 if __name__ == '__main__':
-    from cola import dag
+    from fanta import dag
 
     sys.exit(dag.main())

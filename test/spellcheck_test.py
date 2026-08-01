@@ -3,10 +3,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cola import compat
-from cola import qtutils
-from cola import spellcheck
-from cola.widgets.spellcheck import SpellCheckLineEdit
+from fanta import compat
+from fanta import qtutils
+from fanta import spellcheck
+from fanta.widgets.spellcheck import SpellCheckLineEdit
 from qtpy import QtGui
 from qtpy import QtWidgets
 from qtpy.QtCore import QEvent

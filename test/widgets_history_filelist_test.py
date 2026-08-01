@@ -7,13 +7,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cola import icons
-from cola import qtcompat
-from cola.models import dag
-from cola.widgets.filelist import FileTreeWidgetItem
-from cola.widgets.filelist import FileWidget
-from cola.widgets.filelist import merge_numstat_rows
-from cola.widgets.filelist import parse_status_and_numstat
+from fanta import icons
+from fanta import qtcompat
+from fanta.models import dag
+from fanta.widgets.filelist import FileTreeWidgetItem
+from fanta.widgets.filelist import FileWidget
+from fanta.widgets.filelist import merge_numstat_rows
+from fanta.widgets.filelist import parse_status_and_numstat
 from qtpy import QtCore
 from qtpy import QtWidgets
 

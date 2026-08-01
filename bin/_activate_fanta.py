@@ -32,7 +32,7 @@ def initialize_version():
 
 def get_version():
     """Calculate a setuptools-scm compatible version number from the git worktree"""
-    from cola import git
+    from fanta import git
 
     worktree = git.Git(worktree=get_prefix())
     if not worktree.is_valid():
@@ -75,7 +75,7 @@ def get_version():
 
 def update_pkginfo_version(scm_version):
     """Update git_fanta.egg_info/PKG-INFO with the specified version"""
-    from cola import version
+    from fanta import version
 
     pkginfo = os.path.join(get_prefix(), 'git_fanta.egg-info', 'PKG-INFO')
     content, pkginfo_version = get_pkginfo_version(pkginfo)

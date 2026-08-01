@@ -1,7 +1,7 @@
 """Tests fuer die Migration von ~/.config/git-cola nach ~/.config/git-fanta."""
 
 
-from cola import resources
+from fanta import resources
 
 
 def test_config_home_points_at_git_fanta(monkeypatch, tmp_path):

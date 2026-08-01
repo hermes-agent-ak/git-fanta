@@ -1,5 +1,5 @@
-from cola import core
-from cola import icons
+from fanta import core
+from fanta import icons
 
 
 def test_from_filename_unicode():

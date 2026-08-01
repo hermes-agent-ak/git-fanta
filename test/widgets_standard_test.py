@@ -3,10 +3,10 @@ import sys
 """Tests for cola.widgets.standard helpers."""
 import pytest
 
-from cola import qtutils
-from cola.widgets import defs
-from cola.widgets.standard import MessageBox
-from cola.widgets.standard import _strip_maximized_geometry_flag
+from fanta import qtutils
+from fanta.widgets import defs
+from fanta.widgets.standard import MessageBox
+from fanta.widgets.standard import _strip_maximized_geometry_flag
 from qtpy import QtCore
 from qtpy import QtWidgets
 

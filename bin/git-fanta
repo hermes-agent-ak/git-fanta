@@ -3,7 +3,7 @@ import sys
 
 import _activate_fanta
 
-from cola.main import main
+from fanta.main import main
 
 if __name__ == '__main__':
     sys.exit(main())

@@ -6,10 +6,10 @@ from unittest.mock import patch
 
 import pytest
 
-from cola import dag as dag_cli
-from cola.models import dag
-from cola.models import prefs
-from cola.widgets.dag import _prepare_labels
+from fanta import dag as dag_cli
+from fanta.models import dag
+from fanta.models import prefs
+from fanta.widgets.dag import _prepare_labels
 
 from .helper import app_context
 from .helper import commit_files
@@ -67,10 +67,10 @@ def test_repo_readers_isolate_interleaved_commit_graphs(app_context):
 
     with (
         patch(
-            'cola.models.dag.core.run_command',
+            'fanta.models.dag.core.run_command',
             side_effect=((0, output_a, ''), (0, output_b, '')),
         ),
-        patch('cola.models.dag.prefs.logdate', return_value='default'),
+        patch('fanta.models.dag.prefs.logdate', return_value='default'),
     ):
         commits_a = reader_a.get()
         parent_a = next(commits_a)
@@ -106,10 +106,10 @@ def test_repo_reader_reset_discards_objects_and_changed_input(app_context):
 
     with (
         patch(
-            'cola.models.dag.core.run_command',
+            'fanta.models.dag.core.run_command',
             side_effect=((0, output_a, ''), (0, output_b, '')),
         ),
-        patch('cola.models.dag.prefs.logdate', return_value='default'),
+        patch('fanta.models.dag.prefs.logdate', return_value='default'),
     ):
         list(reader.get())
         first_tip = reader[shared_oid]
@@ -139,10 +139,10 @@ def test_repo_reader_preserves_command_error(app_context):
 
     with (
         patch(
-            'cola.models.dag.core.run_command',
+            'fanta.models.dag.core.run_command',
             return_value=(128, '', 'fatal: bad revision'),
         ),
-        patch('cola.models.dag.prefs.logdate', return_value='default'),
+        patch('fanta.models.dag.prefs.logdate', return_value='default'),
     ):
         assert list(reader.get()) == []
 
@@ -155,13 +155,13 @@ def test_repo_reader_success_clears_previous_command_error(app_context):
 
     with (
         patch(
-            'cola.models.dag.core.run_command',
+            'fanta.models.dag.core.run_command',
             side_effect=(
                 (128, '', 'fatal: bad revision'),
                 (0, '', ''),
             ),
         ),
-        patch('cola.models.dag.prefs.logdate', return_value='default'),
+        patch('fanta.models.dag.prefs.logdate', return_value='default'),
     ):
         list(reader.get())
         reader.reset()
@@ -176,10 +176,10 @@ def test_repo_reader_reset_clears_previous_command_error(app_context):
 
     with (
         patch(
-            'cola.models.dag.core.run_command',
+            'fanta.models.dag.core.run_command',
             return_value=(128, '', 'fatal: bad revision'),
         ),
-        patch('cola.models.dag.prefs.logdate', return_value='default'),
+        patch('fanta.models.dag.prefs.logdate', return_value='default'),
     ):
         list(reader.get())
 
@@ -203,10 +203,10 @@ def test_repo_reader_isolates_overlapping_runs(app_context):
 
     with (
         patch(
-            'cola.models.dag.core.run_command',
+            'fanta.models.dag.core.run_command',
             side_effect=((11, output_a, 'old error'), (12, output_b, 'new error')),
         ),
-        patch('cola.models.dag.prefs.logdate', return_value='default'),
+        patch('fanta.models.dag.prefs.logdate', return_value='default'),
     ):
         old_commits = reader.get()
         old_parent = next(old_commits)
@@ -248,8 +248,8 @@ def test_repo_reader_reset_does_not_mutate_partial_run(app_context):
     reader = dag.RepoReader(app_context, dag.DAG('history', 2), allow_git_init=False)
 
     with (
-        patch('cola.models.dag.core.run_command', return_value=(0, output, '')),
-        patch('cola.models.dag.prefs.logdate', return_value='default'),
+        patch('fanta.models.dag.core.run_command', return_value=(0, output, '')),
+        patch('fanta.models.dag.prefs.logdate', return_value='default'),
     ):
         commits = reader.get()
         parent = next(commits)
@@ -291,10 +291,10 @@ def test_repo_reader_publishes_command_status_before_first_yield(app_context):
 
     with (
         patch(
-            'cola.models.dag.core.run_command',
+            'fanta.models.dag.core.run_command',
             return_value=(17, output, 'command failed'),
         ),
-        patch('cola.models.dag.prefs.logdate', return_value='default'),
+        patch('fanta.models.dag.prefs.logdate', return_value='default'),
     ):
         commits = reader.get()
         next(commits)
@@ -313,10 +313,10 @@ def test_repo_reader_keeps_command_status_after_processing_exception(app_context
 
     with (
         patch(
-            'cola.models.dag.core.run_command',
+            'fanta.models.dag.core.run_command',
             return_value=(17, output, 'command failed'),
         ),
-        patch('cola.models.dag.prefs.logdate', return_value='default'),
+        patch('fanta.models.dag.prefs.logdate', return_value='default'),
     ):
         commits = reader.get()
         next(commits)
@@ -332,7 +332,7 @@ def test_repo_reader_keeps_command_status_after_processing_exception(app_context
     assert reader._top_commit is None
 
 
-@patch('cola.models.dag.core')
+@patch('fanta.models.dag.core')
 def test_repo_reader(core, dag_context):
     commit_files()
     dag_context.context.model.update_status()
@@ -345,7 +345,7 @@ def test_repo_reader(core, dag_context):
     assert expect == actual
 
 
-@patch('cola.models.dag.core')
+@patch('fanta.models.dag.core')
 def test_repo_reader_order(core, dag_context):
     commits = [
         'ad454b189fe5785af397fd6067cf103268b6626e',
@@ -361,7 +361,7 @@ def test_repo_reader_order(core, dag_context):
         assert commits[idx] == commit.oid
 
 
-@patch('cola.models.dag.core')
+@patch('fanta.models.dag.core')
 def test_repo_reader_parents(core, dag_context):
     parents = [
         [],
@@ -377,7 +377,7 @@ def test_repo_reader_parents(core, dag_context):
         assert parents[idx] == [p.oid for p in commit.parents]
 
 
-@patch('cola.models.dag.core')
+@patch('fanta.models.dag.core')
 def test_repo_reader_contract(core, dag_context):
     commit_files()
     dag_context.context.model.update_status()
@@ -515,7 +515,7 @@ def test_history_result_is_frozen_and_has_exact_graph_contract():
     from dataclasses import fields
     from typing import get_type_hints
 
-    from cola.models.graph import GraphResult
+    from fanta.models.graph import GraphResult
 
     assert [field.name for field in fields(dag.HistoryResult)] == [
         'run_id',

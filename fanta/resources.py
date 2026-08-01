@@ -24,20 +24,20 @@ LEGACY_CONFIG_DIRNAME = 'git-cola'  # git-fanta was renamed from git-cola
 _resources = core.abspath(core.realpath(__file__))
 _package = os.path.dirname(_resources)
 
-if _package.endswith(os.path.join('site-packages', 'cola')):
+if _package.endswith(os.path.join('site-packages', 'fanta')):
     # Unix release tree
-    # __file__ = '$prefix/lib/pythonX.Y/site-packages/cola/__file__.py'
-    # _package = '$prefix/lib/pythonX.Y/site-packages/cola'
+    # __file__ = '$prefix/lib/pythonX.Y/site-packages/fanta/__file__.py'
+    # _package = '$prefix/lib/pythonX.Y/site-packages/fanta'
     _prefix = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.dirname(_package)))
     )
-elif _package.endswith(os.path.join('pkgs', 'cola')):
+elif _package.endswith(os.path.join('pkgs', 'fanta')):
     # Windows release tree
-    # __file__ = $installdir/pkgs/cola
+    # __file__ = $installdir/pkgs/fanta
     _prefix = os.path.dirname(os.path.dirname(_package))
 else:
     # this is the source tree
-    # __file__ = '$prefix/cola/__file__.py'
+    # __file__ = '$prefix/fanta/__file__.py'
     _prefix = os.path.dirname(_package)
 
 
@@ -94,7 +94,7 @@ def command(name: str) -> str:
 def doc(*args) -> str:
     """Return a path relative to cola's /usr/share/doc/ or the docs/ directory"""
     # pyproject.toml does not support data_files in pyproject.toml so we install the
-    # hotkey files as cola/data/ package data. This is a fallback location for when
+    # hotkey files as fanta/data/ package data. This is a fallback location for when
     # users did not use the garden.yaml or Makefile to install cola.
     path = share('doc', 'git-fanta', *args)
     if not os.path.exists(path):
@@ -103,7 +103,7 @@ def doc(*args) -> str:
 
 
 def i18n(*args) -> str:
-    """Return a path relative to cola's i18n locale directory, e.g. cola/i18n"""
+    """Return a path relative to cola's i18n locale directory, e.g. fanta/i18n"""
     return package_data('i18n', *args)
 
 
@@ -153,7 +153,7 @@ def package_command(*args) -> str:
 def icon_dir(theme: str) -> str:
     """Return the icons directory for the specified theme
 
-    This returns the ``icons`` directory inside the ``cola`` Python package.
+    This returns the ``icons`` directory inside the ``fanta`` Python package.
     When theme is defined then it will return a subdirectory of the icons/
     directory, e.g. "dark" for the dark icon theme.
 

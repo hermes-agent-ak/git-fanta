@@ -1,7 +1,7 @@
 """Tests for the git-fanta command-line parser."""
 
-from cola import main
-from cola.models import dag
+from fanta import main
+from fanta.models import dag
 
 
 def test_dag_parser_preserves_absent_count():

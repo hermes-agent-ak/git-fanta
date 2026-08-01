@@ -1,8 +1,8 @@
 """Tests for the diffparse module"""
 import pytest
 
-from cola import core
-from cola import diffparse
+from fanta import core
+from fanta import diffparse
 
 from . import helper
 

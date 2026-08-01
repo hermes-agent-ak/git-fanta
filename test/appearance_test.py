@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cola import app as cola_app
-from cola.widgets.diff import DiffSyntaxHighlighter
+from fanta import app as cola_app
+from fanta.widgets.diff import DiffSyntaxHighlighter
 from qtpy import QtGui
 from qtpy import QtWidgets
 

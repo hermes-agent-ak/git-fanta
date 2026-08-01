@@ -2,7 +2,7 @@
 
 import os
 
-from cola import gitcmds
+from fanta import gitcmds
 
 from . import helper
 from .helper import app_context

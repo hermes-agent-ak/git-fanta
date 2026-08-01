@@ -1,6 +1,6 @@
 """Tests the cola.core module's unicode handling"""
 
-from cola import core
+from fanta import core
 
 from . import helper
 

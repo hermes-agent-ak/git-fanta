@@ -68,7 +68,7 @@ nitpicky = True
 autodoc_preserve_defaults = True
 
 # Get the version from cola/_version.py.
-versionfile = os.path.join(srcdir, 'cola', '_version.py')
+versionfile = os.path.join(srcdir, 'fanta', '_version.py')
 scope = {}
 with open(versionfile) as f:
     exec(f.read(), scope)

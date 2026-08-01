@@ -44,7 +44,7 @@ EXEMPT_FILES = frozenset({
     'test/env_rename_test.py',
     'test/prepare_commit_msg_hook_test.py',
 })
-EXEMPT_PREFIXES = ('cola/i18n/', 'docs/plans/', 'qtpy/')
+EXEMPT_PREFIXES = ('fanta/i18n/', 'docs/plans/', 'qtpy/')
 
 # Der alte Produktname in allen Schreibweisen, die im Repo vorkommen.
 LEGACY_PRODUCT_NAMES = ('git-cola', 'git_cola', 'Git Cola', 'git cola')
@@ -53,11 +53,11 @@ LEGACY_PRODUCT_NAMES = ('git-cola', 'git_cola', 'Git Cola', 'git cola')
 # Format: (Pfad relativ zum Repo-Wurzelverzeichnis, erwarteter Teilstring)
 PROTECTED_REFERENCES = (
     ('README.md', 'https://github.com/git-cola/git-cola.git'),
-    ('cola/gravatar.py', 'https://git-cola.github.io/images/git-64x64.jpg'),
-    ('cola/widgets/about.py', 'https://github.com/git-cola/git-cola/issues'),
-    ('cola/widgets/log.py', 'https://git-cola.readthedocs.io/en/latest/'),
-    ('cola/settings.py', 'https://github.com/git-cola/git-cola/issues/1241'),
-    ('cola/themes.py', 'https://github.com/git-cola/git-cola/issues/905'),
+    ('fanta/gravatar.py', 'https://git-cola.github.io/images/git-64x64.jpg'),
+    ('fanta/widgets/about.py', 'https://github.com/git-cola/git-cola/issues'),
+    ('fanta/widgets/log.py', 'https://git-cola.readthedocs.io/en/latest/'),
+    ('fanta/settings.py', 'https://github.com/git-cola/git-cola/issues/1241'),
+    ('fanta/themes.py', 'https://github.com/git-cola/git-cola/issues/905'),
     ('docs/conf.py', 'https://gitlab.com/git-cola/git-cola'),
     ('.github/workflows/ci.yml', 'brew install git-cola'),
     ('test/gravatar_test.py', 'git-cola.github.io'),
@@ -136,7 +136,7 @@ def test_no_legacy_product_name_in_tracked_filenames():
         name
         for name in listing.split('\0')
         if name
-        and not name.startswith(('cola/i18n/', 'docs/plans/'))
+        and not name.startswith(('fanta/i18n/', 'docs/plans/'))
         and ('git-cola' in name or '_activate_cola' in name)
     ]
 
@@ -151,7 +151,7 @@ def test_garden_build_commands_use_git_fanta():
 
     # Fork-eigene Build-Artefakte tragen den neuen Namen.
     assert './bin/git-fanta' in text
-    assert 'cola/icons/git-fanta.svg' in text
+    assert 'fanta/icons/git-fanta.svg' in text
     assert './bin/git-cola' not in text
 
     # Upstream-Remotes bleiben erhalten.
@@ -172,10 +172,10 @@ def test_distribution_name_matches_pyproject():
     assert match, 'pyproject.toml hat keinen name-Eintrag'
     distribution = match.group(1)
 
-    version_py = (REPO_ROOT / 'cola' / 'version.py').read_text(encoding='utf-8')
+    version_py = (REPO_ROOT / 'fanta' / 'version.py').read_text(encoding='utf-8')
     assert (
         f"metadata.version('{distribution}')" in version_py
-    ), f'cola/version.py fragt nicht nach "{distribution}"'
+    ), f'fanta/version.py fragt nicht nach "{distribution}"'
     assert distribution == 'git-fanta'
 
 
@@ -190,7 +190,7 @@ def test_no_legacy_config_key_literals():
     pattern = re.compile(r"'cola\.[a-z]")
     offenders = []
     for name, text in tracked_text_files():
-        if not name.startswith(('cola/', 'bin/')):
+        if not name.startswith(('fanta/', 'bin/')):
             continue
         for number, line in enumerate(text.splitlines(), start=1):
             if pattern.search(line):
@@ -203,7 +203,7 @@ def test_no_legacy_config_key_literals():
 
 def test_translation_template_uses_the_new_product_name():
     """Die nutzersichtbaren msgid-Strings tragen den neuen Produktnamen."""
-    pot = REPO_ROOT / 'cola' / 'i18n' / 'git-fanta.pot'
+    pot = REPO_ROOT / 'fanta' / 'i18n' / 'git-fanta.pot'
     assert pot.is_file(), 'cola/i18n/git-fanta.pot fehlt'
 
     msgids = [

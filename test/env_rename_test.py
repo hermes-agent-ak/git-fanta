@@ -1,6 +1,6 @@
 """Tests fuer die Umbenennung der GIT_COLA_*-Umgebungsvariablen."""
 
-from cola import compat
+from fanta import compat
 
 from . import helper
 from .helper import app_context
@@ -34,7 +34,7 @@ def test_getenv_returns_default_when_neither_is_set(monkeypatch):
 
 def test_commit_message_path_prefers_new_file(app_context):
     """Existiert .git/GIT_FANTA_MSG, wird diese Datei benutzt."""
-    from cola import gitcmds
+    from fanta import gitcmds
 
     new_path = app_context.git.git_path('GIT_FANTA_MSG')
     helper.write_file(new_path, 'neue Nachricht')
@@ -44,7 +44,7 @@ def test_commit_message_path_prefers_new_file(app_context):
 
 def test_commit_message_path_falls_back_to_legacy_file(app_context):
     """Existiert nur .git/GIT_COLA_MSG, wird diese Datei benutzt."""
-    from cola import gitcmds
+    from fanta import gitcmds
 
     legacy_path = app_context.git.git_path('GIT_COLA_MSG')
     helper.write_file(legacy_path, 'alte Nachricht')
@@ -54,14 +54,14 @@ def test_commit_message_path_falls_back_to_legacy_file(app_context):
 
 def test_commit_message_path_returns_none_without_a_file(app_context):
     """Ohne Datei bleibt der Rueckgabewert None - der bestehende Vertrag."""
-    from cola import gitcmds
+    from fanta import gitcmds
 
     assert gitcmds.commit_message_path(app_context) is None
 
 
 def test_save_commitmsg_writes_the_new_file(app_context):
     """Geschrieben wird immer nur noch .git/GIT_FANTA_MSG."""
-    from cola import core
+    from fanta import core
 
     path = app_context.model.save_commitmsg('hallo')
 

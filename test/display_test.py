@@ -1,4 +1,4 @@
-from cola import display
+from fanta import display
 
 
 def test_shorten_paths():

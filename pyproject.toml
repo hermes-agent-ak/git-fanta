@@ -76,10 +76,10 @@ pyside6 = [
 ]
 
 [project.scripts]
-fanta = "cola.main:main"
-git-fanta = "cola.main:main"
-git-dag = "cola.dag:main"
-git-fanta-sequence-editor = "cola.sequenceeditor:main"
+fanta = "fanta.main:main"
+git-fanta = "fanta.main:main"
+git-dag = "fanta.dag:main"
+git-fanta-sequence-editor = "fanta.sequenceeditor:main"
 
 [tool.cercis]
 function-definition-extra-indent = false
@@ -90,20 +90,20 @@ addopts = "--ruff"
 
 [tool.setuptools]
 packages = [
-    "cola",
-    "cola.bin",
-    "cola.data",
-    "cola.i18n",
-    "cola.i18n.glossary",
-    "cola.icons",
-    "cola.icons.dark",
-    "cola.models",
-    "cola.widgets",
+    "fanta",
+    "fanta.bin",
+    "fanta.data",
+    "fanta.i18n",
+    "fanta.i18n.glossary",
+    "fanta.icons",
+    "fanta.icons.dark",
+    "fanta.models",
+    "fanta.widgets",
 ]
 include-package-data = true
 
 [tool.setuptools.package-data]
-cola = [
+fanta = [
     "bin/*",
     "data/*.html",
     "i18n/*.po",

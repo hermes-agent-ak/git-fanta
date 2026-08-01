@@ -68,17 +68,17 @@ trees:
         ${activate}
         if type pyupgrade >/dev/null 2>&1
         then
-            pyupgrade --py39-plus bin/git-* bin/*.py cola/*.py cola/*/*.py
+            pyupgrade --py39-plus bin/git-* bin/*.py fanta/*.py fanta/*/*.py
         fi
       check/mypy: |
         ${activate}
-        python3 -m mypy --config-file pyproject.toml bin cola
+        python3 -m mypy --config-file pyproject.toml bin fanta
       fmt: |
         ${activate}
         cercis --version
-        cercis "$@" bin bin/git-* cola test extras/sphinxtogithub
+        cercis "$@" bin bin/git-* fanta test extras/sphinxtogithub
         isort --version
-        isort --force-single-line-imports --py=39 --no-lines-before=STDLIB "$@" bin bin/git-* cola test extras/sphinxtogithub
+        isort --force-single-line-imports --py=39 --no-lines-before=STDLIB "$@" bin bin/git-* fanta test extras/sphinxtogithub
       html: garden html ${GARDEN_CMD_VERBOSE} docs
       install: |
         ${activate}
@@ -93,8 +93,8 @@ trees:
         mkdir -p "${DESTDIR}${docdir}"
         mkdir -p "${DESTDIR}${iconsdir}"
         mkdir -p "${DESTDIR}${metainfodir}"
-        install -m 664 cola/data/*.html "${DESTDIR}${docdir}"
-        install -m 664 cola/icons/git-fanta.svg "${DESTDIR}${iconsdir}"
+        install -m 664 fanta/data/*.html "${DESTDIR}${docdir}"
+        install -m 664 fanta/icons/git-fanta.svg "${DESTDIR}${iconsdir}"
         install -m 644 share/applications/*.desktop "${DESTDIR}${appsdir}"
         install -m 664 share/metainfo/*.xml "${DESTDIR}${metainfodir}"
       i18n>:
@@ -131,14 +131,14 @@ trees:
         pynsist "$@" pynsist.cfg
         rm -rf docs/html
       po: |
-        for po in cola/i18n/*.po
+        for po in fanta/i18n/*.po
         do
             msgmerge \
                 --no-wrap \
                 --no-fuzzy-matching \
                 --output-file $$po.new \
                 $$po \
-                cola/i18n/git-fanta.pot
+                fanta/i18n/git-fanta.pot
             mv $$po.new $$po
         done
       pot: |
@@ -147,17 +147,17 @@ trees:
             --keyword=N_ \
             --no-wrap \
             --omit-header \
-            --output-dir cola/i18n \
+            --output-dir fanta/i18n \
             --output git-fanta.pot \
-            cola/*.py \
-            cola/*/*.py
+            fanta/*.py \
+            fanta/*/*.py
       pages<: doc
       pages: garden install ${GARDEN_CMD_VERBOSE} -D prefix=${TREE_PATH}/pages docs "$@"
       publish: ${activate} twine upload dist/*.whl dist/*.tar.gz
       release: ${activate} ./todo/release --all
       run: ${activate} ./bin/git-fanta "$@"
       run/qt6: ${activate} QT_API=PyQt6 ./bin/git-fanta "$@"
-      test: ${activate} ${offscreen} ${PYTEST} "$@" cola test
+      test: ${activate} ${offscreen} ${PYTEST} "$@" fanta test
       tox: ${offscreen} tox run "$@"
       tox/check: ${offscreen} tox run -e check "$@"
       version/bump: ./todo/set-version "${version-next}"
@@ -273,7 +273,7 @@ trees:
       install: |
         ${activate}
         mkdir -p "${DESTDIR}${docdir}"
-        install -m 644 ../cola/data/*.html "${DESTDIR}${docdir}"
+        install -m 644 ../fanta/data/*.html "${DESTDIR}${docdir}"
         install -m 644 *.rst "${DESTDIR}${docdir}"
         # HTML documentation
         mkdir -p "${DESTDIR}${htmldir}"
@@ -414,7 +414,7 @@ variables:
   pip-editable: "--editable"
   pip-upgrade: ""
   version-digits: |
-    $ eval "$(sed -e 's/ //g' "${GARDEN_CONFIG_DIR}/cola/_version.py")"
+    $ eval "$(sed -e 's/ //g' "${GARDEN_CONFIG_DIR}/fanta/_version.py")"
     printf '%s' "$VERSION"
   version-builtin: $ ${GARDEN_CONFIG_DIR}/bin/git-fanta version --brief --builtin
   version-full: $ ${GARDEN_CONFIG_DIR}/bin/git-fanta version --brief
@@ -434,6 +434,6 @@ variables:
   gl-ssh: "git@gitlab.com"
   # External commands and options
   PYTEST: ${PYTHON} -B -m pytest ${PYTEST-OPTIONS}
-  PYTEST-OPTIONS: $ test "$(uname -s)" != Linux && printf '%s' --ignore=cola/inotify.py
+  PYTEST-OPTIONS: $ test "$(uname -s)" != Linux && printf '%s' --ignore=fanta/inotify.py
   PYTHON: python3
   SPHINX: ${PYTHON} -m sphinx -d _build/doctrees -a

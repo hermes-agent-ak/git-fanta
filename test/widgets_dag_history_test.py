@@ -9,38 +9,38 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cola import dag as dag_cli
-from cola import main as main_cli
-from cola.interaction import Interaction
-from cola.models import dag
-from cola.models import graph as graph_model
-from cola.widgets import dag as dagwidget
-from cola.widgets import standard
-from cola.widgets.dag import COMMIT_ROLE
-from cola.widgets.dag import GRAPH_PREV_ROW_ROLE
-from cola.widgets.dag import GRAPH_ROW_ROLE
-from cola.widgets.dag import CommitDescriptionWidget
-from cola.widgets.dag import CommitHistoryWidget
-from cola.widgets.dag import CommitTreeWidget
-from cola.widgets.dag import CommitTreeWidgetItem
-from cola.widgets.dag import EdgeColor
-from cola.widgets.dag import GitDAG
-from cola.widgets.dag import GraphDelegate
-from cola.widgets.dag import ReaderThread
-from cola.widgets.dag import _best_contrast
-from cola.widgets.dag import _color_contrast
-from cola.widgets.dag import _HistoryCacheMetadata
-from cola.widgets.dag import _opaque_color
-from cola.widgets.dag import _palette_key
-from cola.widgets.dag import commit_message_file_spans
-from cola.widgets.dag import date_column_width
-from cola.widgets.dag import inline_graph_style
-from cola.widgets.dag import merge_candidate
-from cola.widgets.dag import oid_column_width
-from cola.widgets.dag import readable_chip_fill
-from cola.widgets.dag import readable_chip_fills
-from cola.widgets.dag import short_oid
-from cola.widgets.main import MainView
+from fanta import dag as dag_cli
+from fanta import main as main_cli
+from fanta.interaction import Interaction
+from fanta.models import dag
+from fanta.models import graph as graph_model
+from fanta.widgets import dag as dagwidget
+from fanta.widgets import standard
+from fanta.widgets.dag import COMMIT_ROLE
+from fanta.widgets.dag import GRAPH_PREV_ROW_ROLE
+from fanta.widgets.dag import GRAPH_ROW_ROLE
+from fanta.widgets.dag import CommitDescriptionWidget
+from fanta.widgets.dag import CommitHistoryWidget
+from fanta.widgets.dag import CommitTreeWidget
+from fanta.widgets.dag import CommitTreeWidgetItem
+from fanta.widgets.dag import EdgeColor
+from fanta.widgets.dag import GitDAG
+from fanta.widgets.dag import GraphDelegate
+from fanta.widgets.dag import ReaderThread
+from fanta.widgets.dag import _best_contrast
+from fanta.widgets.dag import _color_contrast
+from fanta.widgets.dag import _HistoryCacheMetadata
+from fanta.widgets.dag import _opaque_color
+from fanta.widgets.dag import _palette_key
+from fanta.widgets.dag import commit_message_file_spans
+from fanta.widgets.dag import date_column_width
+from fanta.widgets.dag import inline_graph_style
+from fanta.widgets.dag import merge_candidate
+from fanta.widgets.dag import oid_column_width
+from fanta.widgets.dag import readable_chip_fill
+from fanta.widgets.dag import readable_chip_fills
+from fanta.widgets.dag import short_oid
+from fanta.widgets.main import MainView
 from qtpy import QtCore
 from qtpy import QtGui
 from qtpy import QtTest
@@ -161,7 +161,7 @@ def test_load_if_stale_advances_generation_and_never_parses_refs_on_gui_thread(
         parse_calls.append(QtCore.QThread.currentThread())
         raise AssertionError('history refresh must not resolve refs on the GUI thread')
 
-    monkeypatch.setattr('cola.gitcmds.parse_refs', forbidden_parse_refs)
+    monkeypatch.setattr('fanta.gitcmds.parse_refs', forbidden_parse_refs)
 
     history.load_if_stale()
     first_generation = history.active_cache_metadata.generation
@@ -250,7 +250,7 @@ def test_two_history_widgets_have_independent_state(
     qapp, app_context, managed_qobject, monkeypatch
 ):
     ManualReaderThread.instances = []
-    monkeypatch.setattr('cola.widgets.dag.ReaderThread', ManualReaderThread)
+    monkeypatch.setattr('fanta.widgets.dag.ReaderThread', ManualReaderThread)
     first = CommitHistoryWidget(app_context, ref='one', count=1)
     second = managed_qobject(CommitHistoryWidget(app_context, ref='two', count=2))
     factory = dag.CommitFactory()
@@ -454,7 +454,7 @@ def test_failed_or_stale_result_preserves_all_standalone_views(
         app_context.git, 'show', lambda *_args, **_kwargs: (0, '1\t0\told.txt\0', '')
     )
     ManualReaderThread.instances = []
-    monkeypatch.setattr('cola.widgets.dag.ReaderThread', ManualReaderThread)
+    monkeypatch.setattr('fanta.widgets.dag.ReaderThread', ManualReaderThread)
     window = managed_qobject(GitDAG(app_context, dag.DAG('HEAD', 1000)))
     history = window.historywidget
     factory = dag.CommitFactory()
@@ -1318,7 +1318,7 @@ def test_selected_inline_summary_and_each_chip_have_contrasting_text(
 def test_commit_tree_palette_change_updates_viewport_and_next_paint_style(
     qapp, app_context, managed_qobject, monkeypatch
 ):
-    import cola.widgets.dag as dag_widget
+    import fanta.widgets.dag as dag_widget
 
     first = _palette('#ffffff', '#202020', '#ffffff', '#eeeeee', '#225f99', '#ffffff')
     second = _palette('#181818', '#eeeeee', '#151515', '#292929', '#b66d24', '#111111')
@@ -2009,7 +2009,7 @@ def test_reader_thread_emits_one_final_result_with_exact_repo_error(
         def get_worktree_commits(self):
             raise AssertionError('failed reads must not add pseudo-commits')
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', FakeReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', FakeReader)
     thread = managed_qobject(ReaderThread(app_context, request))
     results = QtTest.QSignalSpy(thread.result)
 
@@ -2039,7 +2039,7 @@ def test_reader_thread_uses_immutable_request_snapshot(
         def get_worktree_commits(self):
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', FakeReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', FakeReader)
     request = dag.HistoryRequest(3, 'HEAD', 10, False)
     thread = managed_qobject(ReaderThread(app_context, request))
     results = QtTest.QSignalSpy(thread.result)
@@ -2079,7 +2079,7 @@ def test_reader_thread_interruption_after_empty_read_skips_worktree(
             worktree_called.set()
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', BlockingEmptyReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', BlockingEmptyReader)
     request = dag.HistoryRequest(23, 'HEAD', 10, False)
     thread = managed_qobject(ReaderThread(app_context, request))
     results = QtTest.QSignalSpy(thread.result)
@@ -2140,7 +2140,7 @@ def _history(app_context, managed_qobject, monkeypatch):
     app_context.app.theme.selection_color.return_value = QtGui.QColor('#4488cc')
     app_context.app.theme.selection_color.return_value = QtGui.QColor('#4488cc')
     ManualReaderThread.instances = []
-    monkeypatch.setattr('cola.widgets.dag.ReaderThread', ManualReaderThread)
+    monkeypatch.setattr('fanta.widgets.dag.ReaderThread', ManualReaderThread)
     return managed_qobject(CommitHistoryWidget(app_context, ref='HEAD', count=1000))
 
 
@@ -2675,7 +2675,7 @@ def test_reader_thread_converts_exceptions_to_one_exact_failed_result(
                 raise RuntimeError(exception_text)
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', FakeReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', FakeReader)
     request = dag.HistoryRequest(17, 'HEAD', 10, False)
     thread = managed_qobject(ReaderThread(app_context, request))
     results = QtTest.QSignalSpy(thread.result)
@@ -2715,7 +2715,7 @@ def test_reader_thread_builds_empty_graph_once_in_worker(
         calls.append((threading.get_ident(), list(graph_input), head_oid))
         return real_build_graph(graph_input, head_oid=head_oid)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', EmptyReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', EmptyReader)
     monkeypatch.setattr(graph_model, 'build_graph', recording_build_graph)
     thread = managed_qobject(
         ReaderThread(app_context, dag.HistoryRequest(20, 'HEAD', 10, False))
@@ -2763,7 +2763,7 @@ def test_reader_thread_interruption_after_worktree_skips_graph(
         build_called.set()
         raise AssertionError((head_oid, 'graph phase must be skipped'))
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', WorktreeBlockingReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', WorktreeBlockingReader)
     monkeypatch.setattr(graph_model, 'build_graph', forbidden_build_graph)
     thread = managed_qobject(
         ReaderThread(app_context, dag.HistoryRequest(22, 'HEAD', 10, True))
@@ -2811,7 +2811,7 @@ def test_reader_thread_builds_graph_from_commits_and_status_pseudo_commits(
         calls.append((threading.get_ident(), graph_input, head_oid))
         return real_build_graph(graph_input, head_oid=head_oid)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', StatusReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', StatusReader)
     monkeypatch.setattr(graph_model, 'build_graph', recording_build_graph)
     thread = managed_qobject(
         ReaderThread(app_context, dag.HistoryRequest(24, 'HEAD', 10, True))
@@ -2862,7 +2862,7 @@ def test_reader_thread_emits_complete_multi_commit_tuple_and_has_no_add_signal(
         def get_worktree_commits(self):
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', FakeReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', FakeReader)
     thread = managed_qobject(
         ReaderThread(app_context, dag.HistoryRequest(21, 'HEAD', 10, False))
     )
@@ -2924,7 +2924,7 @@ def test_large_history_graph_is_built_once_in_worker_and_applied_atomically(
         build_calls.append((threading.get_ident(), list(graph_input), head_oid))
         return real_build_graph(graph_input, head_oid=head_oid)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', LargeReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', LargeReader)
     monkeypatch.setattr(graph_model, 'build_graph', recording_build_graph)
     app_context.settings.get_gui_state.return_value = {}
     app_context.app.theme.background_color_rgb.return_value = '#ffffff'
@@ -3127,7 +3127,7 @@ def test_partial_real_reader_outcomes_preserve_last_successful_view(
         def get_worktree_commits(self):
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', PartialReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', PartialReader)
     widget = _real_history(app_context, managed_qobject)
     existing_factory = dag.CommitFactory()
     existing = _commit(app_context, existing_factory, 'existing')
@@ -3222,7 +3222,7 @@ def test_deferred_delete_waits_for_real_blocked_reader(qapp, app_context, monkey
         def get_worktree_commits(self):
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', BlockingReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', BlockingReader)
     widget = CommitHistoryWidget(app_context)
     destroyed = QtTest.QSignalSpy(widget.destroyed)
     assert widget.request_history('active', 10, False)
@@ -3268,7 +3268,7 @@ def test_close_waits_for_real_blocked_reader_and_discards_pending(
         def get_worktree_commits(self):
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', BlockingReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', BlockingReader)
     widget = _real_history(app_context, managed_qobject)
     assert widget.request_history('active', 10, False)
     assert entered.wait(2)
@@ -3330,7 +3330,7 @@ def test_real_thread_stop_finalizes_once_and_queued_finished_is_noop(
         def get_worktree_commits(self):
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', BlockingReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', BlockingReader)
     widget = _real_history(app_context, managed_qobject)
     widget.request_history('active', 10, False)
     thread = widget.active_thread

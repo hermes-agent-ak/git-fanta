@@ -1,7 +1,7 @@
 """Tests the compat module"""
 import os
 
-from cola import compat
+from fanta import compat
 
 
 def test_setenv():

@@ -1,5 +1,5 @@
 """Test Startup Dialog (git fanta --prompt) Context Menu and related classes"""
-from cola.widgets import startup
+from fanta.widgets import startup
 
 from .helper import app_context
 

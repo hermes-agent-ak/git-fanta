@@ -1,7 +1,7 @@
 """Test the textwrap module"""
 import pytest
 
-from cola import textwrap
+from fanta import textwrap
 
 
 class WordWrapDefaults:

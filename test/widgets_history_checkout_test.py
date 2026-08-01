@@ -7,13 +7,13 @@ from unittest.mock import Mock
 
 import pytest
 
-from cola import cmds
-from cola.interaction import Interaction
-from cola.models import dag
-from cola.widgets import dag as dagwidget
-from cola.widgets import defs
-from cola.widgets.dag import CommitTreeWidget
-from cola.widgets.dag import CommitTreeWidgetItem
+from fanta import cmds
+from fanta.interaction import Interaction
+from fanta.models import dag
+from fanta.widgets import dag as dagwidget
+from fanta.widgets import defs
+from fanta.widgets.dag import CommitTreeWidget
+from fanta.widgets.dag import CommitTreeWidgetItem
 from qtpy import QtCore
 from qtpy import QtGui
 from qtpy import QtTest
