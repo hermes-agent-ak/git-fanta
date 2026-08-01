@@ -28,12 +28,14 @@ def test_prefers_the_new_hook_name(app_context):
     assert gitcmds.prepare_commit_message_hook(app_context) == expect
 
 
-def test_falls_back_to_the_legacy_hook_name(app_context):
-    """Existiert nur der alte cola-Hook, wird dieser benutzt."""
-    expect = _write_hook(app_context, 'cola-prepare-commit-msg')
+def test_a_cola_hook_is_not_run(app_context):
+    """A hook is executable code installed for the other application."""
+    _write_hook(app_context, 'cola-prepare-commit-msg')
     app_context.cfg.reset()
 
-    assert gitcmds.prepare_commit_message_hook(app_context) == expect
+    assert gitcmds.prepare_commit_message_hook(app_context).endswith(
+        'fanta-prepare-commit-msg'
+    )
 
 
 def test_returns_the_new_name_when_no_hook_exists(app_context):

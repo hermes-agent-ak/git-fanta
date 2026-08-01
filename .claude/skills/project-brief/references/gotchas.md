@@ -332,10 +332,10 @@ version display falls back to the builtin value without saying so.
 `brew install git-cola`, which pulled the other Git GUI into the build environment and hid any
 dependency Git Fanta failed to declare. Do not put it back; add the concrete formula instead.
 
-**A forgotten `'cola.<key>'` literal will not turn a test red.** `cola/gitcfg.py` falls back to
-the old prefix by design, so the stale key keeps working and the rename is quietly incomplete.
-`test_no_legacy_config_key_literals` in `test/rename_guard_test.py` is the only thing that
-notices — there are 34 such literals outside `cola/models/prefs.py`, spread over 16 files.
+**A `'cola.<key>'` literal is dead code, not a fallback.** `fanta/gitcfg.py` used to probe
+the old prefix, which kept a forgotten literal working. Work package 14 removed that, so
+such a literal now reads a key nothing sets and the setting silently stops working.
+`test_no_legacy_config_key_literals` in `test/rename_guard_test.py` finds them.
 
 **The upstream references are load-bearing.** `CHANGES.rst`, the `github.com/git-cola/...` links
 in code comments, and the remotes in `garden.yaml` point at a project that still exists.

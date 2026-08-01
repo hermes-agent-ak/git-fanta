@@ -157,29 +157,19 @@ def test_new_config_prefix_is_read(app_context):
     assert app_context.cfg.get('fanta.tabwidth') == 4
 
 
-def test_legacy_config_prefix_is_still_read(app_context):
-    """Ein alter cola.*-Key wirkt weiterhin, wenn kein fanta.*-Key gesetzt ist."""
+def test_a_cola_prefixed_key_is_not_read(app_context):
+    """The other project's keys configure the other project only."""
     helper.run_git('config', 'cola.tabwidth', '8')
     app_context.cfg.reset()
 
-    assert app_context.cfg.get('fanta.tabwidth') == 8
+    assert app_context.cfg.get('fanta.tabwidth', default=4) == 4
 
 
-def test_new_config_prefix_wins_over_legacy(app_context):
-    """Ist beides gesetzt, gewinnt der neue Key."""
-    helper.run_git('config', 'cola.tabwidth', '8')
-    helper.run_git('config', 'fanta.tabwidth', '2')
-    app_context.cfg.reset()
-
-    assert app_context.cfg.get('fanta.tabwidth') == 2
-
-
-def test_legacy_config_prefix_is_read_by_get_all(app_context):
-    """get_all() beruecksichtigt den alten Prefix ebenfalls."""
+def test_get_all_does_not_read_the_cola_prefix(app_context):
     helper.run_git('config', '--add', 'cola.icontheme', 'dark')
     app_context.cfg.reset()
 
-    assert 'dark' in app_context.cfg.get_all('fanta.icontheme')
+    assert app_context.cfg.get_all('fanta.icontheme') == []
 
 
 def test_unknown_key_still_returns_default(app_context):

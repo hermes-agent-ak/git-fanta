@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 class Interaction:
     """Prompts the user and answers questions"""
 
-    VERBOSE = bool(compat.getenv_with_legacy('GIT_FANTA_VERBOSE'))
+    VERBOSE = bool(compat.getenv('GIT_FANTA_VERBOSE'))
 
     @classmethod
     def command(

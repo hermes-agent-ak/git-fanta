@@ -11,7 +11,7 @@ from typing import Any
 
 from . import core
 from .compat import WIN32
-from .compat import getenv_with_legacy
+from .compat import getenv
 from .compat import int_types
 from .compat import ustr
 from .decorators import memoize
@@ -20,8 +20,8 @@ from .interaction import Interaction
 if TYPE_CHECKING:
     from .types import TextType
 
-GIT_FANTA_TRACE = getenv_with_legacy('GIT_FANTA_TRACE', '')
-GIT = getenv_with_legacy('GIT_FANTA_GIT', 'git')
+GIT_FANTA_TRACE = getenv('GIT_FANTA_TRACE', '')
+GIT = getenv('GIT_FANTA_GIT', 'git')
 STATUS = 0
 STDOUT = 1
 STDERR = 2

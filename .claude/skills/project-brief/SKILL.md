@@ -10,8 +10,10 @@ user-facing carries the fork name: the `git-fanta` executable, the `git fanta` s
 `fanta.*` git-config keys, `GIT_FANTA_*` environment variables and `~/.config/git-fanta`.
 The Python package is `fanta` (`import fanta`, `fanta/`); it was renamed from `cola` on
 2026-08-01, see `docs/plans/2026-08-01-paint-performance-and-fanta-module.md`. A handful of `cola`
-spellings survive on purpose — the `git fanta cola` sub-command alias, `icons.cola()`, the
-read-only `cola.*` config fallback and `ColaApplication` — do not "fix" those. References to
+spellings survive on purpose — `icons.cola()` and `ColaApplication`, both internal names — do
+not "fix" those. Every fallback that let another installation's *setup* reach this application
+is gone: the `cola.*` config prefix, the `GIT_COLA_*` environment variables, `.git/GIT_COLA_MSG`,
+the `cola-prepare-commit-msg` hook and the `git fanta cola` alias. References to
 the upstream project itself (github.com/git-cola/git-cola, `CHANGES.rst`, the remotes in
 `garden.yaml`) are also deliberate and must stay. See
 `docs/plans/2026-07-30-rename-to-git-fanta.md`.
@@ -167,5 +169,6 @@ Consult `references/gotchas.md` for the full list with evidence. The short versi
 - `app_context.settings` is a **raw `Mock`, and a `Mock` is truthy** — any widget calling
   `init_state(context.settings, ...)` blows up at construction unless the test sets
   `get_gui_state.return_value = {}` first.
-- A **forgotten `'cola.<key>'` config literal stays green**: `gitcfg` falls back to the old
-  prefix on purpose, so only `test_no_legacy_config_key_literals` notices.
+- **A `'cola.<key>'` literal is now simply dead**, not a working fallback. `gitcfg` reads only
+  `fanta.`, so the setting silently stops working. `test_no_legacy_config_key_literals`
+  still finds the literals; `test/no_legacy_fallback_test.py` pins the behaviour.

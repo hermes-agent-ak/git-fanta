@@ -97,10 +97,12 @@ def add_command(
 
 
 def add_cola_command(subparser: argparse._SubParsersAction) -> None:
-    """Add the main "git fanta" command. "git fanta cola" is valid"""
-    parser = add_command(
-        subparser, 'fanta', 'launch git-fanta', cmd_cola, aliases=('cola',)
-    )
+    """Add the main "git fanta" command
+
+    There is deliberately no "cola" alias: this fork does not answer to the
+    name of the project it was forked from.
+    """
+    parser = add_command(subparser, 'fanta', 'launch git-fanta', cmd_cola)
     _add_cola_options(parser)
 
 

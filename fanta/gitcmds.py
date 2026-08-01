@@ -1022,13 +1022,12 @@ def commit_touching_path(context, oids, path):
 def commit_message_path(context: ApplicationContext) -> str | None:
     """Return the path to .git/GIT_FANTA_MSG, or None when it does not exist
 
-    git-fanta was renamed from git-cola. A pre-rename .git/GIT_COLA_MSG is still
-    honored so that a commit message written before the rename is not lost.
+    .git/GIT_COLA_MSG is deliberately not consulted: it holds the other
+    application's unsaved commit message for this repository.
     """
-    for basename in ('GIT_FANTA_MSG', 'GIT_COLA_MSG'):
-        path = context.git.git_path(basename)
-        if core.exists(path):
-            return path
+    path = context.git.git_path('GIT_FANTA_MSG')
+    if core.exists(path):
+        return path
     return None
 
 
@@ -1056,15 +1055,11 @@ def read_merge_commit_message(context: ApplicationContext, path) -> TextType:
 def prepare_commit_message_hook(context: ApplicationContext) -> str:
     """Return the fanta.preparecommitmessagehook to prepare the commit message
 
-    git-fanta was renamed from git-cola. A pre-rename cola-prepare-commit-msg hook
-    is still honored when no fanta-prepare-commit-msg hook is installed.
+    A cola-prepare-commit-msg hook is deliberately not run: a hook is executable
+    code that the other application's user installed for that application.
     """
     config = context.cfg
     default_hook = config.hooks_path('fanta-prepare-commit-msg')
-    if not core.exists(default_hook):
-        legacy_hook = config.hooks_path('cola-prepare-commit-msg')
-        if core.exists(legacy_hook):
-            default_hook = legacy_hook
     return config.get('fanta.preparecommitmessagehook', default=default_hook)
 
 

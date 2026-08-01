@@ -178,7 +178,7 @@ def get_icon_themes(context: ApplicationContext) -> list[str]:
     """Return the default icon theme names"""
     result = []
 
-    icon_themes_env = compat.getenv_with_legacy('GIT_FANTA_ICON_THEME')
+    icon_themes_env = compat.getenv('GIT_FANTA_ICON_THEME')
     if icon_themes_env:
         result.extend([x for x in icon_themes_env.split(':') if x])
 

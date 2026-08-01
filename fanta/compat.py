@@ -85,27 +85,15 @@ def byte_offset_to_int_converter():
     return result
 
 
-# git-fanta was renamed from git-cola. Umgebungsvariablen heissen jetzt GIT_FANTA_*,
-# die alten GIT_FANTA_*-Namen bleiben als Fallback wirksam.
-_LEGACY_ENV_PREFIX = 'GIT_COLA_'
+# Git Fanta reads GIT_FANTA_* and nothing else. It installs alongside git-cola,
+# so honouring that project's GIT_COLA_* variables would let one application's
+# environment reconfigure the other -- see test/no_legacy_fallback_test.py.
 _ENV_PREFIX = 'GIT_FANTA_'
 
 
-def legacy_env_name(name):
-    """Return the pre-rename name of a GIT_FANTA_* variable, or None"""
-    if name.startswith(_ENV_PREFIX):
-        return _LEGACY_ENV_PREFIX + name[len(_ENV_PREFIX) :]
-    return None
-
-
-def getenv_with_legacy(name, default=None):
-    """Read an environment variable, falling back to its pre-rename name"""
+def getenv(name, default=None):
+    """Read a GIT_FANTA_* environment variable"""
     value = os.getenv(name)
-    if value is not None:
-        return value
-    legacy = legacy_env_name(name)
-    if legacy is not None:
-        value = os.getenv(legacy)
-        if value is not None:
-            return value
-    return default
+    if value is None:
+        return default
+    return value

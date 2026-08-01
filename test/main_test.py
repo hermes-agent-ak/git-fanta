@@ -45,10 +45,3 @@ def test_default_subcommand_is_fanta():
     args = main.parse_args(['fanta'])
 
     assert args.func is main.cmd_cola
-
-
-def test_legacy_cola_subcommand_still_works():
-    """Das alte "cola"-Subkommando bleibt als Alias erhalten."""
-    args = main.parse_args(['cola'])
-
-    assert args.func is main.cmd_cola

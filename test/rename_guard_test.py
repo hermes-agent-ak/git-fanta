@@ -45,7 +45,7 @@ EXEMPT_FILES = frozenset({
     'garden.yaml',
     'test/rename_guard_test.py',
     'test/config_isolation_test.py',
-    'test/env_rename_test.py',
+    'test/no_legacy_fallback_test.py',
     'test/prepare_commit_msg_hook_test.py',
 })
 EXEMPT_PREFIXES = ('fanta/i18n/', 'docs/plans/', 'qtpy/')
