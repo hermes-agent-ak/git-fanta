@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from cola import icons
+from cola import qtcompat
 from cola.models import dag
 from cola.widgets.filelist import FileTreeWidgetItem
 from cola.widgets.filelist import FileWidget
@@ -486,3 +487,38 @@ def test_one_git_show_serves_the_whole_selection(
 
     assert len(calls) == 1
     assert list(calls[0]) == selection
+
+
+def test_the_file_status_icon_resolves_through_the_icon_search_path(qapp):
+    """The reported defect: every status icon in the file panel was missing.
+
+    icons.from_name() wants an "icons:"-prefixed name; handed a bare basename
+    it asks Qt for a path relative to the process working directory, which is
+    the repository the user opened. This is the one test in the suite that
+    registers the icon search path, so it has to put it back afterwards - and
+    icons.from_name is memoized, so its cache has to go too.
+    """
+    icons.install(['default'])
+    icons.from_name.cache.clear()
+    try:
+        item = FileTreeWidgetItem('12\t0\tsrc/main.py')
+        item.set_status('A')
+
+        assert not item.icon(0).pixmap(16, 16).isNull()
+    finally:
+        qtcompat.set_search_paths('icons', [])
+        icons.from_name.cache.clear()
+
+
+@pytest.mark.parametrize('status', ('A', 'D', 'M', 'T', 'R', 'C', ''))
+def test_every_status_code_maps_to_an_asset_that_exists(qapp, status):
+    """A basename with no file behind it fails silently at paint time."""
+    icons.install(['default'])
+    icons.from_name.cache.clear()
+    try:
+        basename = icons.diff_status_basename(status, 'src/main.py')
+
+        assert not icons.icon(basename).pixmap(16, 16).isNull(), basename
+    finally:
+        qtcompat.set_search_paths('icons', [])
+        icons.from_name.cache.clear()

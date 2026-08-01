@@ -249,7 +249,7 @@ class FileTreeWidgetItem(QtWidgets.QTreeWidgetItem):
         """
         self.status = status or ''
         basename = icons.diff_status_basename(self.status, self.path)
-        self.setIcon(0, icons.from_name(basename))
+        self.setIcon(0, icons.icon(basename))
         labels = {
             'A': 'Added',
             'D': 'Deleted',
