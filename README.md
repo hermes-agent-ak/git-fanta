@@ -319,23 +319,22 @@ and `git fanta grep` launches the grep tool.
 See `git fanta --help-commands` for the full list of commands.
 
     $ git fanta --help-commands
-    usage: git-fanta [-h]
+    usage: git-fanta [-h] [--help-commands]
+                     {fanta,about,am,archive,branch,browse,clone,config,dag,diff,fetch,find,grep,merge,open,pull,push,rebase,recent,remote,search,stash,tag,version} ...
 
-                    {cola,am,archive,branch,browse,config,
-                     dag,diff,fetch,find,grep,merge,pull,push,
-                     rebase,remote,search,stash,tag,version}
-                    ...
+    options:
+      -h, --help            show this help message and exit
+      --help-commands       show available commands
 
     valid commands:
-      {cola,am,archive,branch,browse,config,
-       dag,diff,fetch,find,grep,merge,pull,push,
-       rebase,remote,search,stash,tag,version}
-
-        cola                start git-fanta
+      {fanta,about,am,archive,branch,browse,clone,config,dag,diff,fetch,find,grep,merge,open,pull,push,rebase,recent,remote,search,stash,tag,version}
+        fanta               launch git-fanta
+        about               about git-fanta
         am                  apply patches using "git am"
         archive             save an archive
         branch              create a branch
         browse              browse repository
+        clone               clone repository
         config              edit configuration
         dag                 start git-fanta-dag
         diff                view diffs
@@ -343,14 +342,17 @@ See `git fanta --help-commands` for the full list of commands.
         find                find files
         grep                grep source
         merge               merge branches
+        open                quick open
         pull                pull remote branches
         push                push remote branches
         rebase              interactive rebase
+        recent              edit recent files
         remote              edit remotes
         search              search commits
         stash               stash and unstash changes
         tag                 create tags
         version             print the version
+
 
 ## Development
 
@@ -402,15 +404,11 @@ wraps `pip install --prefix=<prefix>` to provide a packaging-friendly
 
 ## Microsoft Visual C++ 2015 Redistributable
 
-Earlier versions of Git Fanta may have shipped without `vcruntime140.dll`  and may
-not run on machines that are missing this DLL.
+The Windows installer bundles `vcruntime140.dll`, so nothing has to be
+installed separately.
 
-To fix this, download the
-[Microsoft Visual C++ 2015 Redistributable](https://www.microsoft.com/en-us/download/details.aspx?id=52685)
-and install it
-
-Git Fanta v4.0.0 and newer include this DLL and do not require this to be installed
-separately.
+If you run Git Fanta from source on a machine that is missing that DLL, install
+the [Microsoft Visual C++ 2015 Redistributable](https://www.microsoft.com/en-us/download/details.aspx?id=52685).
 
 ## Development
 
@@ -425,13 +423,13 @@ directly from the source tree.  For example, from a Git Bash terminal:
 
 ## Multiple Python versions
 
-If you have multiple versions of Python installed, the `contrib/win32/cola`
-launcher script might choose the newer version instead of the python
-that has PyQt installed.  In order to resolve this, you can set the
-`cola.pythonlocation` git configuration variable to tell cola where to
-find python.  For example:
+If you have several Python installations, run Git Fanta with the interpreter
+that has PyQt installed rather than relying on `PATH`:
 
-    git config --global cola.pythonlocation /c/Python39
+    /c/Python312/python.exe ./bin/git-fanta
+
+The Windows installer bundles its own Python, so an installed Git Fanta is not
+affected by this.
 
 ## Building Windows Installers
 
@@ -447,13 +445,12 @@ To build the installer using Pynsist run:
 
 This will generate an installer in `build/nsis/`.
 
-## Windows "History Browser" Configuration Upgrade
+## Windows "History Browser" Configuration
 
-You may need to configure your history browser if you are upgrading from an
-older version of Git Fanta on Windows.
+`git-fanta-dag` is the default history browser on Windows and needs no
+configuration. Read on only if you want `gitk` instead.
 
-`gitk` was originally the default history browser, but `gitk` cannot be
-launched as-is on Windows because `gitk` is a shell script.
+`gitk` cannot be launched as-is on Windows because it is a shell script.
 
 If you are configured to use `gitk`, then change your configuration to
 go through Git's `sh.exe` on Windows.  Similarly, we must go through
@@ -464,5 +461,3 @@ Preferences screen and change the history browser command to:
 
     "C:/Program Files/Git/bin/sh.exe" --login -i C:/Git/bin/gitk
 
-`git-fanta-dag` is the default history browser on Windows, so new
-users do not need to configure anything.

@@ -143,7 +143,7 @@ If not, see http://www.gnu.org/licenses/.
 
 def version_text(context):
     git_version = version.git_version(context)
-    cola_version = version.version()
+    fanta_version = version.version()
     python_path = sys.executable
     python_version = sys.version
     qt_version = qtpy.QT_VERSION
@@ -163,7 +163,7 @@ def version_text(context):
     platform_version = platform.platform()
 
     scope = dict(
-        cola_version=cola_version,
+        fanta_version=fanta_version,
         git_version=git_version,
         platform_version=platform_version,
         pyqt_api_name=pyqt_api_name,
@@ -178,7 +178,7 @@ def version_text(context):
         N_(
             """
         <br>
-            Git Fanta version %(cola_version)s
+            Git Fanta version %(fanta_version)s
         <ul>
             <li> %(platform_version)s
             <li> Python (%(python_path)s) %(python_version)s
