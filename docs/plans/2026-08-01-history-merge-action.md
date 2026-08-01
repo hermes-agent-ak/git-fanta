@@ -1,5 +1,12 @@
 ---
-status: open
+status: completed
+completed_at: 2026-08-01
+plan_commit: ac113c72
+implementation_branch: tree-ui/merge-action/minimax-M3
+implementation_head: 95df2ee5
+ci_run: nicht ausgefuehrt (lokal gruen - garden check/fmt lokal gruen; check/pyupgrade und check/mypy sind in der Umgebung nicht verfuegbar gewesen)
+manual_verification: |
+  - In einer Headless-Umgebung nicht moeglich. Punkte 1, 4, 5, 6 und die Preselection aus 2 sind durch die Tests aus Tasks 1-4 abgedeckt. Punkte 3 (echtes Merge), 7 (DAG-Fenster) und 8 (Remote-Branch-Pfad) haben keine Test-Abdeckung.
 ---
 
 # Merge action in the history context menu, with a robust preselection

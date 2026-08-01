@@ -248,6 +248,28 @@ Four unrelated defects found by hand-testing the history view.
 - **`MessageBox` sizes from `sizeHint()`**, floored at half `defs.dialog_w` so buttons stay
   readable and capped at `defs.dialog_w` so nothing grows.
 
+## 9. Merge from the history context menu
+
+Plan: `docs/plans/2026-08-01-history-merge-action.md`.
+
+Right-clicking a history row whose branch has commits the current branch lacks offers
+`Merge "<branch>" into "<current>"`, opening the standard merge dialog with that branch chosen.
+
+**Decisions that later work must not undo:**
+
+- **"Mergeable" is `git rev-list --count HEAD..<ref> > 0`,** not
+  `git merge-base --is-ancestor`. The latter reports a diverged branch as unmergeable, which is
+  wrong: a diverged branch is the ordinary merge case.
+- **A ref that does not resolve is a "no", not an error.** git exits 128 there and the output is
+  empty, so the status is checked and the text compared rather than parsed with `int()`.
+- **One deterministic candidate per row.** Local branch first, then remote. Every ref at a commit
+  merges identically, so the choice only decides the wording — but it must not vary.
+- **Preselection sets the radio, the list selection and the field together.** The field alone was
+  what the dialog did before, and it loses to the first click on the revision list. The field is
+  written last, after the list item is selected, because selecting an item writes it back.
+- **The Branches dock was left alone.** It still merges immediately without a dialog. Changing it
+  is a separate decision.
+
 ## Where the fork's tests live
 
 - `test/widgets_dag_history_test.py` — `CommitHistoryWidget`, `GitDAG`, state round-trips,
@@ -274,4 +296,6 @@ Four unrelated defects found by hand-testing the history view.
   `merge_numstat_rows()` and the multi-commit selection tests against a real repository
   (fixture `history_repo`).
 - `test/widgets_history_checkout_test.py` — die Checkout-Regel des Doppelklicks: Branch-Spitze,
+- `test/widgets_merge_preselect_test.py` covers the merge dialog's preselection; the menu entry
+  itself is covered in `test/widgets_history_checkout_test.py`.
   Mehrdeutigkeit, aktueller Branch, abgelöster HEAD, Pseudo-Commits.

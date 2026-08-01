@@ -104,6 +104,19 @@ hues. Assert distinctness on hue.
 **`MessageBox` is shared by `confirm()`, `critical()` and `information()`.** A change to its size
 or position is felt in every dialog in the application.
 
+
+**`ViewerMixin.menu_actions` is `None` until something assigns it.** Only `GitDAG` calls
+`viewer_actions()`; a bare `CommitTreeWidget` has `None` and `update_menu_actions()` raises
+`TypeError`. Tests must assign `viewer_actions(tree, tree)` themselves.
+
+**The history's action set is asserted exactly.**
+`test_mainview_history_context_actions_are_composed_once_and_disable_off_item` compares the key
+set and the count twice. Adding a context-menu action means editing `VIEWER_ACTION_KEYS` and two
+literals in the same file.
+
+**Radio buttons wired with `qtutils.connect_released` do not react to `setChecked()`.** `released`
+is a user gesture; changing the state in code has to run the same update by hand.
+
 ## Git output
 
 **`git show --raw` prints nothing for merge commits**, while `--numstat` still prints the combined
@@ -150,6 +163,12 @@ ordering look input-driven.
 **Plain `git checkout <name>` is not a safe way to materialise a remote branch.** It depends on
 `checkout.guess` being enabled, and when a local branch of the same name already exists elsewhere
 it silently checks that one out. Use `git checkout -b <name> --track <remote>/<name>`.
+
+
+**`git merge-base --is-ancestor` does not answer "can I merge this".** It reports a diverged
+branch as not an ancestor, although a diverged branch is the ordinary merge case. Count instead:
+`git rev-list --count HEAD..<ref>` is greater than zero exactly when there is something to merge.
+A ref that does not resolve exits 128 with empty output.
 
 ## Icons
 

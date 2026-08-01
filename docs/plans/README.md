@@ -17,6 +17,7 @@ rückgängig machen dürfen. Sie sind Nachschlagewerk, keine Aufgabenliste.
 | [2026-08-01-commit-description-panel.md](2026-08-01-commit-description-panel.md) | abgeschlossen | `tree-ui/description-panel/minimax-M3` → `16bd7e3a` |
 | [2026-07-31-history-multi-commit-file-list.md](2026-07-31-history-multi-commit-file-list.md) | abgeschlossen | `tree-ui/multi-select/minimax-M3` → `c8cca254` |
 | [2026-07-31-history-bugfixes-1.md](2026-07-31-history-bugfixes-1.md) | abgeschlossen | `tree-ui/bugfixes-1/minimax-M3` → `02958207` |
+| [2026-08-01-history-merge-action.md](2026-08-01-history-merge-action.md) | abgeschlossen | `tree-ui/merge-action/minimax-M3` → `95df2ee5` |
 
 ## Wenn ein Plan fertig ist
 
