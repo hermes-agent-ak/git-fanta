@@ -420,6 +420,42 @@ AppStream ids, the Qt application name, the configuration directory and the vers
   `pynsist.cfg` must agree; `test/version_test.py` enforces it and rejects a 4.x number, which
   would read as an upstream release.
 
+## 14. Release readiness
+
+Design record: `docs/plans/2026-08-02-release-readiness.md`. Nine commits,
+`c150ce4b -> 89f33c1c`.
+
+Everything between "installs alongside git-cola" and "can be released": the packaging that named
+the wrong project, the fallbacks that let another installation reach this one, the version, and a
+tag-driven release workflow.
+
+**Decisions that later work must not undo:**
+
+- **`garden test` is two pytest invocations, and merging them back re-breaks CI.**
+  `test/widgets_main_history_test.py` runs in its own process because the shared run segfaults
+  about one run in four, at a moving crash site. Refuted along the way: QtWebEngine (2/10 with the
+  import blocked) and teardown consistency (3/12 with every file closing its widgets). The file
+  alone is 0/15, split is 0/7. The cause is still unknown -- re-measure before changing this.
+- **None of the five removed fallbacks comes back.** The `cola.` config prefix,
+  `GIT_COLA_*`, `.git/GIT_COLA_MSG`, the `cola-prepare-commit-msg` hook and the
+  `git fanta cola` alias are gone by decision, and
+  `test/no_legacy_fallback_test.py` guards each one. A `'cola.<key>'` literal is now dead code,
+  not a working fallback.
+- **The pynsist version substitution must be section-aware.** `pynsist.cfg` has two `version=`
+  keys; a `sed -e 's/^version=.*/'` rewrites `[Python] version` too and pynsist rejects the
+  config. `contrib/win32/generate-pynsist-config.py` does it properly and three tests pin it.
+- **`garden.yaml` names no repository this fork does not own.** It arrived describing the upstream
+  project, down to push URLs targeting that project's website repositories. Three tests enforce
+  it. There is deliberately no `garden publish`.
+- **The version lives in four files at once** -- `fanta/_version.py`, `fallback_version`,
+  `pynsist.cfg` and both AppStream components. `test/version_test.py` holds them together, and
+  `release.yml` refuses a tag that disagrees with `_version.py`.
+- **`setuptools_scm` applies the version scheme to `fallback_version`.** An untagged build reports
+  the *next* dev version, so 1.0.1 in the file means `1.0.2.dev...` off a branch. That is correct;
+  a tagged build produces the bare number.
+- **`fanta/__main__.py` needs a body.** The package rename left it with only a docstring, so
+  `python -m fanta` printed nothing and exited 0 while the README documented it.
+
 ## Where the fork's tests live
 
 - `test/widgets_dag_history_test.py` — `CommitHistoryWidget`, `GitDAG`, state round-trips,
@@ -442,8 +478,11 @@ AppStream ids, the Qt application name, the configuration directory and the vers
   tests that are supposed to stop you.
 - `test/config_isolation_test.py` — the opposite invariant: Git Fanta never reads or
   copies the configuration directory of the project it was forked from.
-- `test/macos_bundle_test.py`, `test/version_test.py` — the packaging invariants of work
-  package 13: an unambiguous `Info.plist` and one version across all three packaging files.
+- `test/macos_bundle_test.py`, `test/version_test.py` — the packaging invariants: an
+  unambiguous `Info.plist`, one version across all four packaging files, the section-aware
+  pynsist substitution, and `--version` naming this fork.
+- `test/no_legacy_fallback_test.py` — the five compatibility fallbacks removed in work
+  package 14. If you re-add one, this is what stops you.
 - `test/widgets_dag_history_test.py` enthält zusätzlich die Tabellentests für
   `commit_message_file_spans()` und die Format-Tests des Beschreibungsfelds.
 - `test/widgets_history_filelist_test.py` additionally holds the table test for
