@@ -1156,7 +1156,40 @@ def _color_contrast(first, second):
     return (lighter + 0.05) / (darker + 0.05)
 
 
+_BEST_CONTRAST_CACHE = {}
+_READABLE_CHIP_FILLS_CACHE = {}
+_COLOR_CACHE_LIMIT = 512
+
+
+def _colors_key(colors):
+    """Return a hashable identity for a sequence of QColors."""
+    return tuple(_color_key(color) for color in colors)
+
+
+def _cache_color_result(cache, key, value):
+    """Store a memoized color result, discarding the cache when it grows"""
+    if len(cache) >= _COLOR_CACHE_LIMIT:
+        cache.clear()
+    cache[key] = value
+    return value
+
+
 def _best_contrast(candidates, backgrounds):
+    """Memoized front end for _compute_best_contrast().
+
+    Called once per chip per repaint, and it walks every candidate against
+    every background. The answer depends on nothing but the colors.
+    """
+    key = (_colors_key(candidates), _colors_key(backgrounds))
+    cached = _BEST_CONTRAST_CACHE.get(key)
+    if cached is not None:
+        return cached
+    return _cache_color_result(
+        _BEST_CONTRAST_CACHE, key, _compute_best_contrast(candidates, backgrounds)
+    )
+
+
+def _compute_best_contrast(candidates, backgrounds):
     candidates = tuple(_opaque_color(color) for color in candidates)
     if not candidates:
         candidates = (_opaque_color(QtGui.QColor()),)
@@ -1274,6 +1307,22 @@ def _shifted_value(color, offset):
 
 
 def readable_chip_fills(fills, background, floor=2.5):
+    """Memoized front end for _compute_readable_chip_fills().
+
+    Called once per painted row that carries chips, and measured at 426 us.
+    """
+    key = (_colors_key(fills), _color_key(background), floor)
+    cached = _READABLE_CHIP_FILLS_CACHE.get(key)
+    if cached is not None:
+        return cached
+    return _cache_color_result(
+        _READABLE_CHIP_FILLS_CACHE,
+        key,
+        _compute_readable_chip_fills(fills, background, floor),
+    )
+
+
+def _compute_readable_chip_fills(fills, background, floor=2.5):
     """Make every fill readable on `background` and keep them distinct.
 
     Nudging each fill on its own can land two of them on the same color when

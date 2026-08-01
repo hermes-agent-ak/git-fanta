@@ -4687,3 +4687,59 @@ def test_the_style_cache_does_not_grow_without_bound(qapp):
         len(dagwidget._INLINE_GRAPH_STYLE_CACHE)
         <= dagwidget._INLINE_GRAPH_STYLE_CACHE_LIMIT
     )
+
+
+def test_equal_chip_inputs_reuse_the_same_fills(qapp):
+    """readable_chip_fills ran once per painted row and measured 426 us."""
+    palette = _cache_palette('#ffffff', '#edf0f4', '#202124', '#3268b2', '#ffffff')
+    style = inline_graph_style(palette)
+    fills = (style.chip_other, style.chip_remote, style.chip_head)
+    background = palette.base().color()
+
+    first = readable_chip_fills(fills, background)
+    second = readable_chip_fills(
+        tuple(QtGui.QColor(fill) for fill in fills), background
+    )
+
+    assert first is second
+
+
+def test_a_different_row_background_gets_its_own_fills(qapp):
+    """The selected row is a different background and must not reuse the answer."""
+    palette = _cache_palette('#ffffff', '#edf0f4', '#202124', '#3268b2', '#ffffff')
+    style = inline_graph_style(palette)
+    fills = (style.chip_other, style.chip_remote, style.chip_head)
+
+    on_base = readable_chip_fills(fills, palette.base().color())
+    on_highlight = readable_chip_fills(fills, palette.highlight().color())
+
+    assert on_base is not on_highlight
+    assert [color.rgba() for color in on_base] != [
+        color.rgba() for color in on_highlight
+    ]
+
+
+def test_best_contrast_is_memoized_per_color_identity(qapp):
+    """_best_contrast runs once per chip per repaint and searches every candidate."""
+    candidates = (QtGui.QColor('#000000'), QtGui.QColor('#ffffff'))
+    background = (QtGui.QColor('#3268b2'),)
+
+    first = _best_contrast(candidates, background)
+    second = _best_contrast(
+        tuple(QtGui.QColor(color) for color in candidates),
+        (QtGui.QColor('#3268b2'),),
+    )
+
+    assert first is second
+    assert _best_contrast(candidates, (QtGui.QColor('#ffffff'),)) is not first
+
+
+def test_the_color_caches_do_not_grow_without_bound(qapp):
+    """Same rule as the style cache: bounded, and a miss only costs time."""
+    for step in range(dagwidget._COLOR_CACHE_LIMIT * 2):
+        background = QtGui.QColor(step % 256, 17, 42)
+        readable_chip_fills((QtGui.QColor('#808080'),), background)
+        _best_contrast((QtGui.QColor('#000000'),), (background,))
+
+    assert len(dagwidget._READABLE_CHIP_FILLS_CACHE) <= dagwidget._COLOR_CACHE_LIMIT
+    assert len(dagwidget._BEST_CONTRAST_CACHE) <= dagwidget._COLOR_CACHE_LIMIT
