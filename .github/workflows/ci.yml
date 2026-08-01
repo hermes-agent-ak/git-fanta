@@ -5,6 +5,7 @@ on: [push, pull_request]
 jobs:
   test:
     name: Test
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - uses: styfle/cancel-workflow-action@0.13.1
@@ -77,6 +78,7 @@ jobs:
   history-paint:
     name: History paint (${{ matrix.binding }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -102,6 +104,7 @@ jobs:
 
   macos:
     name: macOS
+    timeout-minutes: 45
     runs-on: macos-latest
     steps:
       - uses: styfle/cancel-workflow-action@0.13.1

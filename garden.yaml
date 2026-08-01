@@ -160,7 +160,19 @@ trees:
             fanta/*/*.py
       run: ${activate} ./bin/git-fanta "$@"
       run/qt6: ${activate} QT_API=PyQt6 ./bin/git-fanta "$@"
-      test: ${activate} ${offscreen} ${PYTEST} "$@" fanta test
+      # test/widgets_main_history_test.py runs in a process of its own. Sharing
+      # one with the rest of the suite segfaults roughly one run in four, at a
+      # different place every time -- widget constructors, resizeEvent, even
+      # inside subprocess. The file passes 15/15 on its own and the crash also
+      # happens on the merge base, so it is neither this file's tests nor a
+      # recent change. Splitting the run makes the suite deterministic; see
+      # docs/plans/2026-08-02-release-readiness.md for the measurements.
+      test: |
+        ${activate}
+        set -e
+        ${offscreen} ${PYTEST} "$@" fanta test \
+            --ignore=test/widgets_main_history_test.py
+        ${offscreen} ${PYTEST} "$@" test/widgets_main_history_test.py
       tox: ${offscreen} tox run "$@"
       tox/check: ${offscreen} tox run -e check "$@"
       version/commit: git commit --all --signoff --message "git-fanta v${version-digits}"

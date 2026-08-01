@@ -84,6 +84,13 @@ def managed_qobject(qapp):
     # before deleting their receivers.
     QtTest.QTest.qWait(5)
     qapp.processEvents()
+    # Close shown windows before deleting them. deleteLater() alone leaves a
+    # visible top-level window registered with the platform integration until
+    # the delete is delivered, and this file shows five of them.
+    for obj in reversed(objects):
+        if isinstance(obj, QtWidgets.QWidget):
+            obj.close()
+    qapp.processEvents()
     for obj in reversed(objects):
         thread = (
             obj
@@ -95,6 +102,7 @@ def managed_qobject(qapp):
             assert thread.wait(5000)
         obj.deleteLater()
     QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+    qapp.processEvents()
 
 
 def _commit(context, factory, oid, parents=()):

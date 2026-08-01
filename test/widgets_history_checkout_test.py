@@ -50,8 +50,13 @@ def managed_qobject(qapp):
     QtTest.QTest.qWait(5)
     qapp.processEvents()
     for obj in reversed(objects):
+        if isinstance(obj, QtWidgets.QWidget):
+            obj.close()
+    qapp.processEvents()
+    for obj in reversed(objects):
         obj.deleteLater()
     QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+    qapp.processEvents()
 
 
 def _git(*args):
