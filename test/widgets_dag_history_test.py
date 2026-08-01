@@ -4391,10 +4391,12 @@ def test_the_date_column_keeps_absorbing_the_slack(qapp, app_context, managed_qo
     """The hash column must not become the one that grows with the window."""
     tree = _tree(app_context, managed_qobject)
 
-    assert tree.header().stretchLastSection() is False
-    assert tree.header().sectionResizeMode(CommitTreeWidgetItem.DATE) == (
-        QtWidgets.QHeaderView.Stretch
-    )
+    # DATE is the last section; Qt stretches it via stretchLastSection.
+    # The Hash column sits between Author and Date so all four splitters
+    # are greifbar - the previous order put Hash at the right end where
+    # the Stretch handle effectively froze the resize.
+    assert tree.header().stretchLastSection() is True
+    assert CommitTreeWidgetItem.DATE == tree.columnCount() - 1
 
 
 def test_the_chip_keeps_a_margin_around_its_text(qapp, app_context, managed_qobject):

@@ -1911,8 +1911,8 @@ class CommitTreeWidgetItem(QtWidgets.QTreeWidgetItem):
 
     SUMMARY = 0
     AUTHOR = 1
-    DATE = 2
-    OID = 3
+    OID = 2
+    DATE = 3
 
     def __init__(self, commit, parent=None, oid_length=prefs.Defaults.abbrev):
         QtWidgets.QTreeWidgetItem.__init__(self, parent)
@@ -1942,16 +1942,13 @@ class CommitTreeWidget(standard.TreeWidget, ViewerMixin):
         self.setHeaderLabels([
             N_('Summary'),
             N_('Author'),
-            N_('Date, Time'),
             N_('Hash'),
+            N_('Date, Time'),
         ])
-        # The Hash column is last and keeps a measured width, so the date column
-        # has to be the one that absorbs the slack. Qt stretches the last section
-        # by default, which would fight that.
-        self.header().setStretchLastSection(False)
-        self.header().setSectionResizeMode(
-            CommitTreeWidgetItem.DATE, QtWidgets.QHeaderView.Stretch
-        )
+        # The Date column is last, so Qt stretches it by default. The Hash
+        # column sits between Author and Date with a measured width, which
+        # leaves every splitter greifbar - the previous order put Hash at the
+        # right end where the Stretch handle effectively froze the resize.
         self.setColumnWidth(
             CommitTreeWidgetItem.OID, oid_column_width(self, self.oid_length)
         )
