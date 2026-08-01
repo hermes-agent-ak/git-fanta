@@ -11,6 +11,7 @@ from cola import cmds
 from cola.interaction import Interaction
 from cola.models import dag
 from cola.widgets import dag as dagwidget
+from cola.widgets import defs
 from cola.widgets.dag import CommitTreeWidget
 from cola.widgets.dag import CommitTreeWidgetItem
 from qtpy import QtCore
@@ -564,3 +565,44 @@ def test_an_empty_branch_list_opens_no_dialog_at_all(qapp, monkeypatch):
 
     assert dagwidget.select_branch_at_commit([]) == ''
     assert built == []
+
+
+def test_the_branch_dialog_sizes_itself_to_fit_its_branches(qapp, managed_qobject):
+    """The default must follow the branches, not the parent window."""
+    dialog = _branch_dialog(managed_qobject, ['main'])
+
+    metrics = dialog.branch_list.fontMetrics()
+    text_width = metrics.horizontalAdvance('main')
+    item_height = dialog.branch_list.sizeHintForRow(0)
+    # Width: text + branch-list padding + 2 px slack on each side.
+    expected_width = text_width + 2 * defs.button_spacing + 32
+    # Height: label + 1 item + buttons + outer margin.
+    expected_height = (
+        dialog.label.sizeHint().height()
+        + item_height
+        + dialog.checkout_button.sizeHint().height()
+        + 3 * defs.margin
+    )
+
+    assert dialog.width() < 420, dialog.width()
+    assert dialog.width() >= expected_width, (dialog.width(), expected_width)
+    assert dialog.height() < 280, dialog.height()
+    assert dialog.height() >= expected_height, (dialog.height(), expected_height)
+
+
+def test_the_branch_dialog_grows_with_more_branches(qapp, managed_qobject):
+    """Adding branches must grow the row that holds them."""
+    small = _branch_dialog(managed_qobject, ['a'])
+    tall = _branch_dialog(managed_qobject, ['a'] * 8)
+
+    assert tall.height() > small.height()
+    assert tall.height() >= small.height() + 7 * tall.branch_list.sizeHintForRow(0)
+
+
+def test_the_branch_dialog_sizes_for_the_longest_branch_name(qapp, managed_qobject):
+    """The widest branch name decides the width."""
+    dialog = _branch_dialog(managed_qobject, ['main', 'a-very-long-branch-name'])
+
+    metrics = dialog.branch_list.fontMetrics()
+    expected_min = metrics.horizontalAdvance('a-very-long-branch-name') + 32
+    assert dialog.width() >= expected_min, (dialog.width(), expected_min)

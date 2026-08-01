@@ -163,10 +163,35 @@ class SelectBranchDialog(standard.Dialog):
         # on. selectcommits.SelectCommits does the same.
         self.init_state(None, self.resize_widget, parent)
 
-    def resize_widget(self, parent):
-        """Set the initial size of the widget"""
-        width, height = qtutils.default_size(parent, 420, 280)
-        self.resize(width, height)
+    def resize_widget(self, parent):  # noqa: ARG002 - parent required by init_state
+        """Size the dialog to fit the branches it shows.
+
+        The window is sized from the contents so a double-click never opens a
+        dialog as large as the main view. Width follows the longest branch
+        name; height follows the number of branches plus the label and the
+        buttons. The user can still drag the corners; init_state persists
+        the chosen geometry.
+        """
+        metrics = self.branch_list.fontMetrics()
+        longest = max(
+            (metrics.horizontalAdvance(name) for name in self._branches), default=0
+        )
+        item_height = (
+            self.branch_list.sizeHintForRow(0) if self._branches else metrics.height()
+        )
+        # Branch-list padding + slack on each side; the list has its own
+        # scrollbar/frame so this is what the user sees as the inner width.
+        list_width = longest + 2 * defs.button_spacing + 32
+        list_height = max(item_height, metrics.height()) * max(1, len(self._branches))
+        # The label wraps inside the list width; the buttons sit beside it.
+        label_height = self.label.heightForWidth(list_width)
+        button_height = self.checkout_button.sizeHint().height()
+        height = label_height + list_height + button_height + 3 * defs.margin
+        # Headroom for the title bar + a few pixels slack so the buttons do
+        # not touch the window edge.
+        height += 32
+        width = list_width + 2 * defs.margin
+        self.resize(max(width, 240), max(height, 180))
 
     def value(self):
         """Return the selected branch name, or an empty string"""
