@@ -1507,7 +1507,7 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
     HEAD_RING_WIDTH = 3
 
     LABEL_BORDER = 3
-    LABEL_SPACING = 4
+    LABEL_SPACING = 1
     LABEL_TEXT_OFFSET = 4
     LABEL_V_PADDING = 2
     ROW_V_MARGIN = 2
@@ -1748,8 +1748,9 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         return bold_font, QtGui.QFontMetrics(bold_font)
 
     def _get_spacing(self, condensed_text: str | None) -> int:
-        if condensed_text is not None:
-            return 0
+        # The spacing applies between any two consecutive chips - including
+        # between a condensed remote marker (origin/...) and the local branch
+        # chip that follows it. Without it the two chips share pixels.
         return self.LABEL_SPACING
 
     def _draw_labels(

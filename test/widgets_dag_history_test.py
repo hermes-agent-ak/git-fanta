@@ -4743,3 +4743,28 @@ def test_the_color_caches_do_not_grow_without_bound(qapp):
 
     assert len(dagwidget._READABLE_CHIP_FILLS_CACHE) <= dagwidget._COLOR_CACHE_LIMIT
     assert len(dagwidget._BEST_CONTRAST_CACHE) <= dagwidget._COLOR_CACHE_LIMIT
+
+
+def test_a_condensed_remote_keeps_visible_space_next_to_the_local(
+    qapp, app_context, managed_qobject
+):
+    """The remote marker and the local branch used to share pixels.
+
+    When origin and local point at the same commit, the row paints a
+    condensed 'origin/...' marker followed by a 'main' chip. _get_spacing
+    returned zero after any condensed entry, so the rounded corners of the
+    two chips sat flush against each other. There is now a font-independent
+    gap between them.
+    """
+    palette = _palette('#f4f5f7', '#202124', '#ffffff', '#edf0f4', '#3268b2', '#ffffff')
+    factory = dag.CommitFactory()
+    commit = _commit(app_context, factory, 'commit')
+    commit.tags = ['heads/main', 'remotes/origin/main']
+    tree = _tree(app_context, managed_qobject)
+
+    painter = _draw_row_labels(tree, commit, palette)
+
+    chips = sorted(painter.rounded_rects, key=lambda r: r.left())
+    assert len(chips) == 2
+    left, right = chips
+    assert right.left() - left.right() >= 1, (left, right)
