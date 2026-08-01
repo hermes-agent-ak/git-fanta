@@ -6,6 +6,8 @@
 	<string>git-fanta</string>
 	<key>CFBundleName</key>
 	<string>Git Fanta</string>
+	<key>CFBundleDisplayName</key>
+	<string>Git Fanta</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -25,14 +27,14 @@
 	<string>com.justroots.git-fanta</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>git-fanta</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<!-- "garden macos/app" and the git-fanta.app Makefile target substitute the
+	     real version for these two placeholders at build time. The four-part
+	     CFBundleVersion is rewritten first so that the three-part pattern
+	     cannot match part of it. -->
 	<key>CFBundleShortVersionString</key>
 	<string>0.0.0</string>
-	<key>CFBundleSignature</key>
-	<string>Cola</string>
 	<key>CFBundleVersion</key>
 	<string>0.0.0.0</string>
 	<key>CFBundleSupportedPlatforms</key>
