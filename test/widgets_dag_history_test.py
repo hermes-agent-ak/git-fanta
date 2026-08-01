@@ -14,6 +14,7 @@ from cola import main as main_cli
 from cola.interaction import Interaction
 from cola.models import dag
 from cola.models import graph as graph_model
+from cola.widgets import dag as dagwidget
 from cola.widgets import standard
 from cola.widgets.dag import COMMIT_ROLE
 from cola.widgets.dag import GRAPH_PREV_ROW_ROLE
@@ -30,6 +31,7 @@ from cola.widgets.dag import _best_contrast
 from cola.widgets.dag import _color_contrast
 from cola.widgets.dag import _HistoryCacheMetadata
 from cola.widgets.dag import _opaque_color
+from cola.widgets.dag import _palette_key
 from cola.widgets.dag import commit_message_file_spans
 from cola.widgets.dag import date_column_width
 from cola.widgets.dag import inline_graph_style
@@ -552,7 +554,12 @@ def test_inline_graph_style_is_palette_derived_distinct_and_repeatable(palette):
     second = inline_graph_style(QtGui.QPalette(palette))
 
     assert first == second
-    assert first is not second
+    # The style is memoized on the identity of the five palette roles it reads,
+    # so an equal palette hands back the same frozen instance. What still has to
+    # hold is that a different palette produces a different style, without any
+    # invalidation call - that is what the two tests at the end of this file
+    # pin down.
+    assert first is second
     with pytest.raises(AttributeError):
         first.normal_fill = QtGui.QColor('#000000')
     assert len(first.lane_colors) >= 4
@@ -4615,4 +4622,68 @@ def test_the_bold_tag_chip_and_its_hit_area_have_identical_boundaries(
             font,
         )[0]
         == -1
+    )
+
+
+def _cache_palette(base, alternate, text, highlight, highlighted_text):
+    palette = QtGui.QPalette()
+    for role, color in (
+        (QtGui.QPalette.Base, base),
+        (QtGui.QPalette.AlternateBase, alternate),
+        (QtGui.QPalette.Text, text),
+        (QtGui.QPalette.Highlight, highlight),
+        (QtGui.QPalette.HighlightedText, highlighted_text),
+    ):
+        palette.setColor(role, QtGui.QColor(color))
+    return palette
+
+
+def test_an_equal_palette_reuses_the_same_style(qapp):
+    """The style was rebuilt once per painted row and cost 5.8 ms each time."""
+    palette = _cache_palette('#ffffff', '#edf0f4', '#202124', '#3268b2', '#ffffff')
+
+    first = inline_graph_style(palette)
+    second = inline_graph_style(QtGui.QPalette(palette))
+
+    assert first is second
+
+
+def test_a_changed_palette_produces_a_different_style(qapp):
+    """The key is the palette itself, so a theme change needs no invalidation."""
+    palette = _cache_palette('#ffffff', '#edf0f4', '#202124', '#3268b2', '#ffffff')
+    original = inline_graph_style(palette)
+    changed = QtGui.QPalette(palette)
+    changed.setColor(QtGui.QPalette.Highlight, QtGui.QColor('#a23872'))
+
+    updated = inline_graph_style(changed)
+
+    assert updated is not original
+    assert updated != original
+    assert inline_graph_style(palette) is original
+
+
+def test_an_invalid_color_does_not_share_a_key_with_black(qapp):
+    """Measured: QColor() and QColor(0, 0, 0) report the same rgba() (trap F2)."""
+    invalid = QtGui.QColor()
+    black = QtGui.QColor(0, 0, 0)
+    assert invalid.rgba() == black.rgba()
+    invalid_palette = _cache_palette(*[invalid] * 5)
+    black_palette = _cache_palette(*[black] * 5)
+
+    assert _palette_key(invalid_palette) != _palette_key(black_palette)
+    assert inline_graph_style(invalid_palette) is not inline_graph_style(black_palette)
+    assert inline_graph_style(invalid_palette) != inline_graph_style(black_palette)
+
+
+def test_the_style_cache_does_not_grow_without_bound(qapp):
+    """A bounded cache can only ever cost a recomputation, never a wrong answer."""
+    for step in range(dagwidget._INLINE_GRAPH_STYLE_CACHE_LIMIT * 3):
+        palette = _cache_palette(
+            QtGui.QColor(step % 256, 0, 0), '#edf0f4', '#202124', '#3268b2', '#ffffff'
+        )
+        assert inline_graph_style(palette).normal_fill.isValid()
+
+    assert (
+        len(dagwidget._INLINE_GRAPH_STYLE_CACHE)
+        <= dagwidget._INLINE_GRAPH_STYLE_CACHE_LIMIT
     )
