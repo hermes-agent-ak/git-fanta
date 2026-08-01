@@ -11,10 +11,15 @@ user-facing carries the fork name: the `git-fanta` executable, the `git fanta` s
 The Python package is `fanta` (`import fanta`, `fanta/`); it was renamed from `cola` on
 2026-08-01, see `docs/plans/2026-08-01-paint-performance-and-fanta-module.md`. A handful of `cola`
 spellings survive on purpose — the `git fanta cola` sub-command alias, `icons.cola()`, the
-`cola.*` config fallback and `ColaApplication` — do not "fix" those.
-(github.com/git-cola/git-cola, `brew install git-cola`, `CHANGES.rst`, the remotes in
+read-only `cola.*` config fallback and `ColaApplication` — do not "fix" those. References to
+the upstream project itself (github.com/git-cola/git-cola, `CHANGES.rst`, the remotes in
 `garden.yaml`) are also deliberate and must stay. See
 `docs/plans/2026-07-30-rename-to-git-fanta.md`.
+
+Git Fanta is built to be installed alongside git-cola, not to replace it: every installed
+command, desktop file, AppStream id and application name is fork-specific, and the other
+project's configuration directory is never read. See
+`docs/plans/2026-08-01-deployment-separation.md`.
 
 Ten work packages have shipped: the inline commit history in the main window, the commit
 file panel beside it, the rename itself, double-clicking a file to open its diff in a window, and

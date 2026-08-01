@@ -404,7 +404,7 @@ def authors_text():
         dict(name='yael levi', title=N_('Developer')),
         dict(name='Łukasz Wojniłowicz', title=N_('Developer')),
     )
-    bug_url = 'https://github.com/git-cola/git-cola/issues'
+    bug_url = 'https://github.com/hermes-agent-ak/git-fanta/issues'
     bug_link = qtutils.link(bug_url, bug_url)
     scope = dict(bug_link=bug_link)
     prelude = (
@@ -481,7 +481,7 @@ def translators_text():
         dict(name='தமிழ் நேரம்', title=N_('Translation')),
     )
 
-    bug_url = 'https://github.com/git-cola/git-cola/issues'
+    bug_url = 'https://github.com/hermes-agent-ak/git-fanta/issues'
     bug_link = qtutils.link(bug_url, bug_url)
     scope = dict(bug_link=bug_link)
 

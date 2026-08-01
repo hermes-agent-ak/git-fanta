@@ -236,20 +236,19 @@ variables.
 
 ## macOS
 
-For most end-users we recommend using either Homebrew or installing into
-a Python virtualenv as described above.
+For most end-users we recommend installing into a Python virtualenv as
+described above.
 
 You can install Git Fanta from source using the same steps as above.
 
 ### Homebrew
 
-An easy way to install Git Fanta is to use [Homebrew](https://brew.sh/) .
-Use Homebrew to install the git-fanta recipe:
+Git Fanta is not published as a Homebrew formula. Install it from source into a
+Python virtualenv as described above, then build the app bundle below.
 
-    brew install git-cola
+Homebrew is still the easiest way to get the build dependencies:
 
-If you install using Homebrew you can stop at this step.
-You don't need to clone the repo or anything.
+    brew install git python
 
 ### git-fanta.app
 
@@ -273,12 +272,13 @@ Re-installing from scratch using the instructions below can get things back in s
 
     brew update
 
-    brew uninstall git-fanta
     brew uninstall pyqt
     brew uninstall pyqt@5
     brew autoremove
 
-    brew install git-cola
+    brew install git python
+
+Then re-create the virtualenv and rebuild the app bundle.
 
 
 ## Windows
@@ -290,7 +290,7 @@ Download and install the following:
 
 * [Git for Windows](https://git-for-windows.github.io/)
 
-* [Git Cola](https://github.com/git-cola/git-cola/releases)
+* [Git Fanta](https://github.com/hermes-agent-ak/git-fanta/releases)
 
 Once these are installed you can run Git Fanta from the Start menu.
 

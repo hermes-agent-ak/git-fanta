@@ -12,54 +12,11 @@
     </p>
   </description>
   <launchable type="desktop-id">git-fanta.desktop</launchable>
-  <screenshots>
-    <screenshot type="default">
-      <image>https://git-cola.github.io/images/screenshot-main-linux.png</image>
-      <caption>Git Fanta running on Linux</caption>
-    </screenshot>
-  </screenshots>
-  <url type="homepage">https://git-cola.gitlab.io/</url>
-  <url type="bugtracker">https://github.com/git-cola/git-cola/issues</url>
-  <url type="vcs-browser">https://gitlab.com/git-cola/git-cola</url>
+  <url type="homepage">https://github.com/hermes-agent-ak/git-fanta</url>
+  <url type="bugtracker">https://github.com/hermes-agent-ak/git-fanta/issues</url>
+  <url type="vcs-browser">https://github.com/hermes-agent-ak/git-fanta</url>
   <releases>
-    <release version="4.19.0" date="2026-07-12" />
-    <release version="4.18.2" date="2026-03-15" />
-    <release version="4.18.1" date="2026-03-15" />
-    <release version="4.18.0" date="2026-03-15" />
-    <release version="4.17.1" date="2026-01-30" />
-    <release version="4.17.0" date="2025-12-30" />
-    <release version="4.16.1" date="2025-11-12" />
-    <release version="4.16.0" date="2025-10-25" />
-    <release version="4.15.0" date="2025-09-06" />
-    <release version="4.14.0" date="2025-08-07" />
-    <release version="4.13.0" date="2025-05-11" />
-    <release version="4.12.0" date="2025-02-22" />
-    <release version="4.11.0" date="2025-01-26" />
-    <release version="4.10.1" date="2024-12-14" />
-    <release version="4.10.0" date="2024-12-10" />
-    <release version="4.9.0" date="2024-11-05" />
-    <release version="4.8.2" date="2024-09-04" />
-    <release version="4.8.1" date="2024-07-26" />
-    <release version="4.8.0" date="2024-06-22" />
-    <release version="4.7.1" date="2024-05-02" />
-    <release version="4.7.0" date="2024-05-02" />
-    <release version="4.6.1" date="2024-03-03" />
-    <release version="4.6.0" date="2024-03-03" />
-    <release version="4.5.0" date="2024-01-23" />
-    <release version="4.4.1" date="2023-11-19" />
-    <release version="4.4.0" date="2023-11-02" />
-    <release version="4.3.2" date="2023-08-30" />
-    <release version="4.3.1" date="2023-08-18" />
-    <release version="4.3.0" date="2023-08-12" />
-    <release version="4.2.1" date="2023-03-31" />
-    <release version="4.2.0" date="2023-03-23" />
-    <release version="4.1.0" date="2022-12-23" />
-    <release version="4.0.4" date="2022-11-22" />
-    <release version="4.0.3" date="2022-11-10" />
-    <release version="4.0.2" date="2022-09-29" />
-    <release version="4.0.1" date="2022-06-10" />
-    <release version="4.0.0" date="2022-05-23" />
-    <release version="3.12.0" date="2022-01-20" />
+    <release version="1.0.0" date="2026-07-31" />
   </releases>
   <content_rating type="oars-1.1" />
 </component>

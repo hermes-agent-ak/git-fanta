@@ -56,7 +56,7 @@ LEGACY_PRODUCT_NAMES = ('git-cola', 'git_cola', 'Git Cola', 'git cola')
 PROTECTED_REFERENCES = (
     ('README.md', 'https://github.com/git-cola/git-cola.git'),
     ('fanta/gravatar.py', 'https://git-cola.github.io/images/git-64x64.jpg'),
-    ('fanta/widgets/about.py', 'https://github.com/git-cola/git-cola/issues'),
+    ('fanta/widgets/about.py', 'https://git-cola.gitlab.io/share/doc/git-cola/'),
     ('fanta/widgets/log.py', 'https://git-cola.readthedocs.io/en/latest/'),
     ('fanta/settings.py', 'https://github.com/git-cola/git-cola/issues/1241'),
     ('fanta/themes.py', 'https://github.com/git-cola/git-cola/issues/905'),
