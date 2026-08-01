@@ -16,17 +16,16 @@
 #   garden man                  # Generate documentation: manual pages only
 #   garden pot                  # Regenerate git-fanta.pot with new translations
 #   garden po                   # Update .po files with new translations from git-fanta.pot
-#   garden pages                # Install docs into the pages/ website sources.
-#   garden build pages          # Generate the pages/ website from the html templates.
 #
 #   # macOS
 #   garden macos/app            # Build a git-fanta.app bundle
 #
-#   # Related Projects
-#   garden grow pages           # Clone the Git Fanta homepage
-#   garden grow fedora          # Clone the Fedora packaging
-#   garden grow deb             # Clone the Debian packaging
-#   garden grow flatpak         # Clone the Flatpak packaging
+#   # Releases are built by .github/workflows/release.yml from a v* tag.
+#   # There is deliberately no "garden publish" and no "garden release":
+#   # this file used to carry Debian, Fedora, Flatpak and website trees whose
+#   # push URLs pointed at repositories this fork does not own, including the
+#   # upstream project's website. Add such a tree back only with a real,
+#   # fork-owned URL.
 trees:
   git-fanta:
     description: The highly-caffeinated Git GUI
@@ -159,112 +158,19 @@ trees:
             --output git-fanta.pot \
             fanta/*.py \
             fanta/*/*.py
-      pages<: doc
-      pages: garden install ${GARDEN_CMD_VERBOSE} -D prefix=${TREE_PATH}/pages docs "$@"
-      publish: ${activate} twine upload dist/*.whl dist/*.tar.gz
-      release: ${activate} ./todo/release --all
       run: ${activate} ./bin/git-fanta "$@"
       run/qt6: ${activate} QT_API=PyQt6 ./bin/git-fanta "$@"
       test: ${activate} ${offscreen} ${PYTEST} "$@" fanta test
       tox: ${offscreen} tox run "$@"
       tox/check: ${offscreen} tox run -e check "$@"
-      version/bump: ./todo/set-version "${version-next}"
       version/commit: git commit --all --signoff --message "git-fanta v${version-digits}"
       version/tag: git tag --sign --message "git-fanta ${version-builtin}" "v${version-builtin}"
       wheel: ${activate} python3 -m build -n .
-    url: "${gl-https}/git-fanta/git-cola.git"
+    url: "${gh-https}/hermes-agent-ak/git-fanta.git"
     remotes:
-      abid1998: "${gh-https}/abid1998/git-cola.git"
-      achernet: "${gh-https}/achernet/git-cola.git"
-      afradox: "${gh-https}/AFRADOX/git-cola.git"
-      ahrirg: "${gh-https}/Ahrirg/git-cola.git"
-      akhilsayshi: "${gh-https}/akhilsayshi/git-cola.git"
-      arnaudh: "${gh-https}/arnaudh/git-cola.git"
-      axel-h: "${gh-https}/axel-h/git-cola.git"
-      baumicoder: "${gh-https}/BaumiCoder/git-cola.git"
-      bearsh: "${gh-https}/bearsh/git-cola.git"
-      bensmrs: "${gh-https}/bensmrs/git-cola.git"
-      bobvanderlinden: "${gh-https}/bobvanderlinden/git-cola.git"
-      brccabral: "${gh-https}/brccabral/git-cola.git"
-      brlin-tw: "${gh-https}/brlin-tw/git-cola.git"
-      dasanit: "${gh-https}/DasaniT/git-cola.git"
-      davvid: "${gh-ssh}:davvid/git-cola.git"
-      dschwoerer: "${gh-https}/dschwoerer/git-cola.git"
-      florisla: "${gh-https}/florisla/git-cola.git"
-      fu7mu4: "${gh-https}/fu7mu4/git-cola.git"
-      gdebure: "${gh-https}/gdebure/git-cola.git"
-      github: "${gh-ssh}:git-fanta/git-cola.git"
-      guoyunhe: "${gh-https}/guoyunhe/git-cola.git"
-      gyuris: "${gh-https}/gyuris/git-cola.git"
-      haffmans: "${gh-https}/haffmans/git-cola.git"
-      harmathy: "${gh-https}/harmathy/git-cola.git"
-      hsoft: "${gh-https}/hsoft/git-cola.git"
-      jamie-pate: "${gh-https}/jamie-pate/git-cola.git"
-      jm4r: "${gh-https}/jm4R/git-cola.git"
-      joshuataylor: "${gh-https}/joshuataylor/git-cola.git"
-      kenyuy: "${gh-https}/kenyuy/git-cola.git"
-      kisaragi-hiu: "${gh-https}/kisaragi-hiu/git-cola.git"
-      kneirinck: "${gh-https}/kneirinck/git-cola.git"
-      kopach: "${gh-https}/kopach/git-cola.git"
-      kt-devoss: "${gh-https}/kt-devoss/_oss_contrib_git-fanta.git"
-      kurellajunior: "${gh-https}/kurellajunior/git-cola.git"
-      kurtmckee: "${gh-https}/kurtmckee/git-cola.git"
-      laerreal: "${gh-https}/laerreal/git-cola.git"
-      lah7: "${gh-https}/lah7/git-cola.git"
-      land784: "${gh-https}/Land784/git-cola.git"
-      lefairy: "${gh-https}/lefairy/git-cola.git"
-      legasik21: "${gh-https}/legasik21/git-fanta_GFI.git"
-      living180: "${gh-https}/living180/git-cola.git"
-      ljhcage: "${gh-https}/ljhcage/git-cola.git"
-      mailaender: "${gh-https}/Mailaender/git-cola.git"
-      malpas: "${gh-https}/malpas/git-cola.git"
-      melkecelioglu: "${gh-https}/melkecelioglu/git-cola.git"
-      milestone12: "${gh-https}/milestone12/git-cola.git"
-      mithil467: "${gh-https}/Mithil467/git-cola.git"
-      mmargoliono: "${gh-https}/mmargoliono/git-fanta"
-      mp-chet: "${gh-https}/mp-chet/git-cola.git"
-      nandalopes: "${gh-https}/nandalopes/git-cola.git"
-      nielbuys: "${gh-https}/NielBuys/git-cola.git"
-      nizhal: "${gh-https}/Nizhal/git-cola.git"
-      orihhalhon: "${gh-https}/OriShalhon/git-cola.git"
-      p12tic: "${gh-https}/p12tic/git-cola.git"
-      pilarmolinalopez: "${gh-https}/pilarmolinalopez/git-cola.git"
-      pushkk: "${gh-https}/PushKK/git-cola.git"
-      quintusfelix: "${gh-https}/quintusfelix/git-cola.git"
-      raidos23: "${gh-https}/raidos23/git-cola.git"
-      rafaelreuber: "${gh-https}/rafaelreuber/git-cola.git"
-      scop: "${gh-https}/scop/git-cola.git"
-      senique: "${gh-https}/senique/git-cola.git"
-      sergei-dyshel: "${gh-https}/sergei-dyshel/git-cola.git"
-      skunkwerks: "${gh-https}/skunkwerks/git-cola.git"
-      sthalik: "${gh-https}/sthalik/git-cola.git"
-      suchismitab0511: "${gh-https}/suchismitab0511/git-cola.git"
-      takluyver: "${gh-https}/takluyver/git-cola.git"
-      thk123: "${gh-https}/thk123/git-cola.git"
-      timgates42: "${gh-https}/timgates42/git-cola.git"
-      vdragon: "${gh-https}/Vdragon/git-cola.git"
-      victorhck: "${gh-https}/victorhck/git-cola.git"
-      virtualstaticvoid: "${gh-https}/virtualstaticvoid/git-cola.git"
-      vishnusanal: "${gh-https}/VishnuSanal/git-cola.git"
-      wm4: "${gh-https}/wm4/git-cola.git"
-      wnguyen14: "${gh-https}/WNguyen14/git-cola.git"
-      wojnilowicz: "${gh-https}/wojnilowicz/git-cola.git"
-      yaellevy: "${gh-https}/yaellevy/git-cola.git"
-      yakushabb: "${gh-https}/yakushabb/git-cola.git"
-    gitconfig:
-      remote.origin.pushurl:
-        - "${gl-ssh}:git-fanta/git-cola.git"
-      remote.publish.pushurl:
-        - "${gh-ssh}:git-fanta/git-cola.git"
-        - "${gl-ssh}:git-fanta/git-cola.git"
-  deb:
-    description: Debian packaging
-    url: "${gl-https}/git-fanta/git-fanta-debian.git"
-    remotes:
-      davvid: "${gh-ssh}:davvid/git-fanta-debian.git"
-    gitconfig:
-      remote.origin.pushurl:
-        - "${gl-ssh}:git-fanta/git-fanta-debian.git"
+      # The project this was forked from. Fetch-only: it is a different project
+      # with a different release line, and nothing here may ever push to it.
+      upstream: "${gh-https}/git-cola/git-cola.git"
   docs:
     description: Sphinx documentation
     variables:
@@ -290,97 +196,6 @@ trees:
         mkdir -p "${DESTDIR}${mandir}"
         install -m 644 _build/man/git-fanta.1 "${DESTDIR}${mandir}"
         install -m 644 _build/man/git-fanta-dag.1 "${DESTDIR}${mandir}"
-  fedora:
-    description: Fedora packaging
-    url: "https://src.fedoraproject.org/rpms/git-cola.git"
-    remotes:
-      davvid: "${gh-https}/davvid/git-fanta-fedora.git"
-      git-fanta: "${gl-https}/git-fanta/git-fanta-fedora.git"
-    gitconfig:
-      remote.davvid.pushurl:
-        - "${gh-ssh}:davvid/git-fanta-fedora.git"
-      remote.git-fanta.pushurl:
-        - "${gl-ssh}:git-fanta/git-fanta-fedora.git"
-      remote.publish.pushurl:
-        - "${gh-ssh}:davvid/git-fanta-fedora.git"
-        - "${gl-ssh}:git-fanta/git-fanta-fedora.git"
-  flatpak:
-    description: Flatpak packaging
-    variables:
-      app-id: com.github.git_fanta.git-fanta
-    commands:
-      build: flatpak-builder "$@" --user "${prefix}" "${app-id}.yml"
-      check: |
-        flatpak run --command=flatpak-builder-lint \
-            org.flatpak.Builder "$@" --exceptions builddir "${prefix}"
-      install: flatpak-builder "$@" --install --user "${prefix}" "${app-id}.yml"
-      run: flatpak run ${app-id}
-      setup: |
-        flatpak remote-add --user --if-not-exists \
-        flathub https://flathub.org/repo/flathub.flatpakrepo
-        flatpak install --user \
-        org.flatpak.Builder/x86_64 \
-        org.kde.Sdk/x86_64/6.9 \
-        org.kde.Platform/x86_64/6.9 \
-        com.riverbankcomputing.PyQt.BaseApp/x86_64/6.9
-    url: "${gh-https}/flathub/com.github.git_fanta.git-fanta.git"
-    remotes:
-      erick555: "${gh-https}/Erick555/com.github.git_fanta.git-fanta.git"
-      mailaender: "${gh-https}/Mailaender/com.github.git_fanta.git-fanta.git"
-      punkpangolin: "${gh-https}/PunkPangolin/com.github.git_fanta.git-fanta.git"
-    gitconfig:
-      remote.origin.pushurl:
-        - "${gh-ssh}:flathub/com.github.git_fanta.git-fanta.git"
-  pages:
-    description: "Git Fanta's homepage"
-    url: "${gl-https}/git-cola/git-cola.gitlab.io.git"
-    remotes:
-      github: "${gh-https}/git-cola/git-cola.github.io.git"
-      ls-jad-elkik: "${gh-https}/ls-jad-elkik/git-cola.github.io.git"
-      lz-coder: "${gh-https}/lz-coder/git-cola.github.io.git"
-    gitconfig:
-      remote.origin.pushurl:
-        - "${gl-ssh}:git-cola/git-cola.gitlab.io.git"
-        - "${gh-ssh}:git-cola/git-cola.github.io.git"
-    variables:
-      prefix: build
-      container-image: "jekyll/minimal:latest"
-    commands:
-      build: jekyll build --destination "${prefix}" "$@"
-      watch: |
-        while true
-        do
-          garden build ${GARDEN_CMD_VERBOSE} "$@"
-          inotifywait --event=close_write --recursive "${TREE_PATH}"
-        done
-      build/podman: |
-        uid=$${UID:-$(id -u)}
-        gid=$${GID:-$(id -g)}
-        podman \
-          run \
-          --interactive \
-          --rm \
-          --user="$uid:$gid" \
-          --userns keep-id:uid=$uid,gid=$gid \
-          --volume="${TREE_PATH}:/srv/jekyll" \
-          --workdir "${TREE_PATH}" \
-          "${container-image}" \
-          jekyll build --destination "${prefix}" "$@"
-      sanitize: dos2unix share/doc/git-fanta/*.html share/doc/git-fanta/html/*.html
-      setup: sudo apt install inotify-tools jekyll
-      publish: |
-        git add -u
-        git add share
-        git commit --signoff --message "git-fanta v${version-builtin}"
-        git push
-    links:
-      - "https://git-cola.gitlab.io"
-      - "https://git-cola.github.io"
-  todo:
-    description: Maintainer scripts and notes
-    worktree: git-fanta
-    branch: todo
-
 commands:
   commit: git commit "$@"
   diff: git diff "$@"

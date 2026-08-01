@@ -145,17 +145,59 @@ def test_no_legacy_product_name_in_tracked_filenames():
 
 
 def test_garden_build_commands_use_git_fanta():
-    """The fork's build commands are renamed, the upstream remotes are not."""
+    """The fork's build commands are renamed."""
     text = (REPO_ROOT / 'garden.yaml').read_text(encoding='utf-8')
 
-    # Build artifacts owned by the fork carry the new name.
     assert './bin/git-fanta' in text
     assert 'fanta/icons/git-fanta.svg' in text
     assert './bin/git-cola' not in text
 
-    # Upstream remotes are preserved.
-    assert 'davvid/git-cola.git' in text
-    assert 'git-cola/git-cola.git' in text
+
+def test_garden_never_pushes_to_a_repository_the_fork_does_not_own():
+    """garden.yaml is a list of remotes; a wrong one pushes to a real project.
+
+    It arrived from the upstream project carrying that project's contributor
+    remotes, its GitLab origin, and Debian/Fedora/Flatpak/website trees whose
+    push URLs pointed at repositories this fork does not own -- including the
+    upstream website. `garden grow` writes those into .git/config verbatim.
+    """
+    import yaml
+
+    config = yaml.safe_load((REPO_ROOT / 'garden.yaml').read_text(encoding='utf-8'))
+
+    for name, tree in config['trees'].items():
+        url = tree.get('url', '')
+        assert 'git-cola' not in url, f'tree {name} clones from {url}'
+
+        gitconfig = tree.get('gitconfig') or {}
+        for key, value in gitconfig.items():
+            if not key.endswith('pushurl'):
+                continue
+            targets = value if isinstance(value, list) else [value]
+            for target in targets:
+                assert 'git-cola' not in target, f'tree {name}.{key} pushes to {target}'
+
+
+def test_garden_only_references_the_upstream_as_a_fetch_remote():
+    """The one allowed git-cola reference is a remote nobody pushes to."""
+    import yaml
+
+    config = yaml.safe_load((REPO_ROOT / 'garden.yaml').read_text(encoding='utf-8'))
+    remotes = config['trees']['git-fanta']['remotes']
+
+    assert remotes == {'upstream': '${gh-https}/git-cola/git-cola.git'}
+
+
+def test_garden_has_no_publish_command():
+    """Releases come from a tag through .github/workflows/release.yml.
+
+    A `twine upload` sitting in garden.yaml uploads whatever is in dist/ to
+    PyPI under this project's name, with no tag and no review.
+    """
+    text = (REPO_ROOT / 'garden.yaml').read_text(encoding='utf-8')
+
+    assert 'twine upload' not in text
+    assert (REPO_ROOT / '.github' / 'workflows' / 'release.yml').is_file()
 
 
 def test_distribution_name_matches_pyproject():
