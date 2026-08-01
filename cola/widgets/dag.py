@@ -1677,19 +1677,53 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
             self.set_hover(None, -1)
 
 
+COLUMN_PADDING = 24
+"""Slack added to a measured column width so the text never touches the edge"""
+
+
+def short_oid(oid, length):
+    """Return the abbreviated object ID shown in the history's Hash column.
+
+    STAGE and WORKTREE are pseudo-commits, not object IDs, so their rows stay
+    blank instead of showing a truncated placeholder name.
+    """
+    if not oid or oid in (dag.STAGE, dag.WORKTREE):
+        return ''
+    return oid[:length]
+
+
+def oid_column_width(widget, length):
+    """Return a width that fits an abbreviated object ID plus padding."""
+    metrics = widget.fontMetrics()
+    return qtutils.fontmetrics_width(metrics, '0' * length) + COLUMN_PADDING
+
+
+def date_column_width(widget):
+    """Return a width that fits the date the history shows, plus padding.
+
+    The sample is the ISO date git is asked for by default. A different
+    fanta.logdate can be wider or narrower; this is the initial width of a
+    column that stretches and that the user can drag, not a promise.
+    """
+    metrics = widget.fontMetrics()
+    return qtutils.fontmetrics_width(metrics, '0000-00-00 00:00') + COLUMN_PADDING
+
+
 class CommitTreeWidgetItem(QtWidgets.QTreeWidgetItem):
     """Custom TreeWidgetItem used in to build the commit tree widget"""
 
     SUMMARY = 0
     AUTHOR = 1
     DATE = 2
+    OID = 3
 
-    def __init__(self, commit, parent=None):
+    def __init__(self, commit, parent=None, oid_length=prefs.Defaults.abbrev):
         QtWidgets.QTreeWidgetItem.__init__(self, parent)
         self.commit = commit
         self.setText(self.SUMMARY, commit.summary)
         self.setText(self.AUTHOR, commit.author)
         self.setText(self.DATE, commit.authdate)
+        self.setText(self.OID, short_oid(commit.oid, oid_length))
 
 
 class CommitTreeWidget(standard.TreeWidget, ViewerMixin):
@@ -1704,14 +1738,28 @@ class CommitTreeWidget(standard.TreeWidget, ViewerMixin):
         standard.TreeWidget.__init__(self, parent)
         ViewerMixin.__init__(self)
 
+        self.context = context
+        self.oid_length = prefs.abbrev(context)
+
         self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        self.setHeaderLabels([N_('Summary'), N_('Author'), N_('Date, Time')])
+        self.setHeaderLabels([
+            N_('Summary'),
+            N_('Author'),
+            N_('Date, Time'),
+            N_('Hash'),
+        ])
+        # The Hash column is last and keeps a measured width, so the date column
+        # has to be the one that absorbs the slack. Qt stretches the last section
+        # by default, which would fight that.
+        self.header().setStretchLastSection(False)
         self.header().setSectionResizeMode(
             CommitTreeWidgetItem.DATE, QtWidgets.QHeaderView.Stretch
         )
+        self.setColumnWidth(
+            CommitTreeWidgetItem.OID, oid_column_width(self, self.oid_length)
+        )
 
         self.graph_delegate = GraphDelegate(self)
-        self.context = context
         self.oidmap = {}
         self.menu_actions = None
         self.selecting = False
@@ -1770,8 +1818,17 @@ class CommitTreeWidget(standard.TreeWidget, ViewerMixin):
         if self._column_init_state < ColumnInitState.SHOW_EVENT:
             self._column_init_state = ColumnInitState.SHOW_EVENT
             width = self.header().width()
-            summary_width = int(width * 0.70)
             author_width = int(width * 0.15)
+            # The date and hash columns hold text of a known shape, so they are
+            # measured rather than given a share of the window. The summary
+            # takes everything that is left; the floor keeps it from collapsing
+            # in a narrow window.
+            fixed_width = (
+                author_width
+                + date_column_width(self)
+                + oid_column_width(self, self.oid_length)
+            )
+            summary_width = max(int(width * 0.35), width - fixed_width)
             # Set initial SUMMARY column width; it will be adjusted when graph loads.
             self.setColumnWidth(CommitTreeWidgetItem.SUMMARY, summary_width)
             self.setColumnWidth(CommitTreeWidgetItem.AUTHOR, author_width)
@@ -1866,7 +1923,7 @@ class CommitTreeWidget(standard.TreeWidget, ViewerMixin):
         self.commits.extend(commits)
         items = []
         for commit in reversed(commits):
-            item = CommitTreeWidgetItem(commit)
+            item = CommitTreeWidgetItem(commit, oid_length=self.oid_length)
             items.append(item)
             self.oidmap[commit.oid] = item
             for tag in commit.tags:

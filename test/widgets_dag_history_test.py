@@ -31,10 +31,13 @@ from cola.widgets.dag import _color_contrast
 from cola.widgets.dag import _HistoryCacheMetadata
 from cola.widgets.dag import _opaque_color
 from cola.widgets.dag import commit_message_file_spans
+from cola.widgets.dag import date_column_width
 from cola.widgets.dag import inline_graph_style
 from cola.widgets.dag import merge_candidate
+from cola.widgets.dag import oid_column_width
 from cola.widgets.dag import readable_chip_fill
 from cola.widgets.dag import readable_chip_fills
+from cola.widgets.dag import short_oid
 from cola.widgets.main import MainView
 from qtpy import QtCore
 from qtpy import QtGui
@@ -1336,9 +1339,14 @@ def test_default_column_ratio_prioritizes_summary_without_overwriting_saved_widt
     history.show()
     qapp.processEvents()
 
-    assert tree.columnWidth(CommitTreeWidgetItem.SUMMARY) == pytest.approx(
-        tree.header().width() * 0.70, abs=2
+    assert tree.columnWidth(CommitTreeWidgetItem.OID) == oid_column_width(
+        tree, tree.oid_length
     )
+    assert tree.columnWidth(CommitTreeWidgetItem.DATE) >= date_column_width(tree)
+    assert tree.columnWidth(CommitTreeWidgetItem.SUMMARY) > tree.columnWidth(
+        CommitTreeWidgetItem.AUTHOR
+    )
+    assert sum(tree.columnWidth(column) for column in range(4)) == tree.header().width()
     assert tree.columnWidth(CommitTreeWidgetItem.AUTHOR) == pytest.approx(
         tree.header().width() * 0.15, abs=2
     )
@@ -4315,3 +4323,62 @@ def test_merge_candidate_ignores_the_pseudo_commits(oid):
 
 def test_merge_candidate_without_a_commit():
     assert merge_candidate(None, 'main') == ''
+
+
+@pytest.mark.parametrize(
+    ('scenario', 'oid', 'expected'),
+    (
+        ('an object ID is abbreviated', 'a' * 40, 'aaaaaaaa'),
+        ('an ID shorter than the limit is kept', 'abc', 'abc'),
+        ('STAGE is not an object ID', dag.STAGE, ''),
+        ('WORKTREE is not an object ID', dag.WORKTREE, ''),
+        ('an empty ID', '', ''),
+        ('no ID at all', None, ''),
+    ),
+)
+def test_short_oid_abbreviates_only_real_object_ids(scenario, oid, expected):
+    """The pseudo-commits must not look like very short hashes."""
+    assert short_oid(oid, 8) == expected, scenario
+
+
+def test_the_history_shows_the_abbreviated_hash_in_its_own_column(
+    qapp, app_context, managed_qobject
+):
+    """The reported gap: the history never showed the commit hash."""
+    factory = dag.CommitFactory()
+    commit = _commit(app_context, factory, 'a' * 40)
+    tree = _tree(app_context, managed_qobject)
+
+    tree.add_commits([commit], _graph_result([commit]))
+
+    item = tree.topLevelItem(0)
+    assert tree.columnCount() == 4
+    assert tree.headerItem().text(CommitTreeWidgetItem.OID) == 'Hash'
+    assert item.text(CommitTreeWidgetItem.OID) == 'a' * tree.oid_length
+    assert item.text(CommitTreeWidgetItem.SUMMARY) == commit.summary
+    assert item.text(CommitTreeWidgetItem.AUTHOR) == commit.author
+    assert item.text(CommitTreeWidgetItem.DATE) == commit.authdate
+
+
+@pytest.mark.parametrize('oid', (dag.STAGE, dag.WORKTREE))
+def test_the_hash_column_stays_empty_for_the_pseudo_commits(
+    qapp, app_context, managed_qobject, oid
+):
+    """A row that is not a commit has no hash to show."""
+    factory = dag.CommitFactory()
+    commit = _commit(app_context, factory, oid)
+    tree = _tree(app_context, managed_qobject)
+
+    tree.add_commits([commit], _graph_result([commit]))
+
+    assert tree.topLevelItem(0).text(CommitTreeWidgetItem.OID) == ''
+
+
+def test_the_date_column_keeps_absorbing_the_slack(qapp, app_context, managed_qobject):
+    """The hash column must not become the one that grows with the window."""
+    tree = _tree(app_context, managed_qobject)
+
+    assert tree.header().stretchLastSection() is False
+    assert tree.header().sectionResizeMode(CommitTreeWidgetItem.DATE) == (
+        QtWidgets.QHeaderView.Stretch
+    )
