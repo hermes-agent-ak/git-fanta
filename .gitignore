@@ -2,9 +2,9 @@
 /.coverage
 /build
 /config.mak
-/cola/_scm_version.py
 /deb
 /dist
+/fanta/_scm_version.py
 /.eggs
 /env*
 /fedora
@@ -15,6 +15,7 @@
 /pages
 /patches
 /pip-wheel-metadata
+/pynsist.generated.cfg
 /.pytest_cache
 /.sonar
 /README.html
