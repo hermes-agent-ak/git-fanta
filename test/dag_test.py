@@ -1,12 +1,14 @@
 # ruff: noqa: I001  # Garden enforces force-single-line imports.
 """Tests DAG functionality"""
 import argparse
+import re
 from unittest.mock import patch
 
 import pytest
 
 from cola import dag as dag_cli
 from cola.models import dag
+from cola.models import prefs
 from cola.widgets.dag import _prepare_labels
 
 from .helper import app_context
@@ -574,3 +576,37 @@ def test_set_arguments_tolerates_namespace_without_count():
 
     assert params.count == 1000
     assert not params.overridden('count')
+
+
+_ISO_MINUTE = r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}'
+
+
+def test_the_default_log_date_is_iso_down_to_the_minute(app_context):
+    """The Date, Time column asked for is '2026-08-01 12:11' and nothing finer."""
+    assert prefs.Defaults.logdate == prefs.DateFormat.ISO_MINUTE
+    assert prefs.logdate(app_context) == 'format:%Y-%m-%d %H:%M'
+
+
+def test_the_default_log_date_can_be_chosen_in_the_preferences(app_context):
+    """A default the combo box does not list would be unselectable."""
+    assert prefs.DateFormat.ISO_MINUTE in prefs.date_formats()
+
+
+def test_the_history_reads_dates_in_that_format(app_context):
+    """End to end: git formats the date, nothing in the application parses one."""
+    commit_files()
+    app_context.model.update_status()
+    reader = dag.RepoReader(app_context, dag.DAG('HEAD', 10))
+
+    commits = list(reader.get())
+
+    assert commits
+    for commit in commits:
+        assert re.fullmatch(_ISO_MINUTE, commit.authdate), commit.authdate
+
+
+def test_the_pseudo_commit_date_uses_the_same_format(app_context):
+    """STAGE and WORKTREE are formatted in Python and must not drift apart."""
+    authdate = dag.get_date_for_current_time(app_context)
+
+    assert re.fullmatch(_ISO_MINUTE, authdate), authdate

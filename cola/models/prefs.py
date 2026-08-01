@@ -79,6 +79,7 @@ class DateFormat:
     LOCAL = 'local'
     ISO = 'iso8601'
     ISO_STRICT = 'iso8601-strict'
+    ISO_MINUTE = 'format:%Y-%m-%d %H:%M'
     RFC = 'rfc2822'
     SHORT = 'short'
     RAW = 'raw'
@@ -100,6 +101,7 @@ class DateFormat:
 def date_formats() -> list[str]:
     """Return valid values for git config cola.logdate"""
     return [
+        DateFormat.ISO_MINUTE,
         DateFormat.DEFAULT,
         DateFormat.RELATIVE,
         DateFormat.LOCAL,
@@ -187,7 +189,7 @@ class Defaults:
     patches_directory = 'patches'
     status_indent = False
     status_show_totals = False
-    logdate = DateFormat.DEFAULT
+    logdate = DateFormat.ISO_MINUTE
     update_index = True
     verbosity = 0
 
