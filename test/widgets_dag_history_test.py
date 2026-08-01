@@ -1053,8 +1053,12 @@ def test_graph_delegate_offscreen_nodes_selection_lanes_and_size(
         option, tree.indexFromItem(tree.topLevelItem(0), 0)
     )
     assert GraphDelegate.LANE_WIDTH == 18
-    assert hint.height() == 26
-    assert 24 <= hint.height() <= 28
+    # The row height follows the desktop font, so pinning it to a number only
+    # holds on the machine that wrote the number down. What has to hold
+    # everywhere is that a chip fits inside its row with a margin left over.
+    chip_height = option.fontMetrics.height() + 2 * GraphDelegate.LABEL_V_PADDING
+    assert hint.height() >= GraphDelegate.ROW_HEIGHT
+    assert hint.height() >= chip_height + 2 * GraphDelegate.ROW_V_MARGIN
 
 
 @pytest.mark.parametrize('point_size', (18, 24))
@@ -1176,7 +1180,8 @@ def test_24pt_visible_chip_and_hit_area_have_identical_boundaries(
     chip = painter.rounded_rects[0]
     x = chip.center().x()
 
-    assert hint.height() == max(26, metrics.height() + 4)
+    chip_height = metrics.height() + 2 * GraphDelegate.LABEL_V_PADDING
+    assert hint.height() >= chip_height + 2 * GraphDelegate.ROW_V_MARGIN
     for y in (chip.top(), chip.bottom()):
         assert (
             tree.graph_delegate._label_hit_test(
@@ -4382,3 +4387,51 @@ def test_the_date_column_keeps_absorbing_the_slack(qapp, app_context, managed_qo
     assert tree.header().sectionResizeMode(CommitTreeWidgetItem.DATE) == (
         QtWidgets.QHeaderView.Stretch
     )
+
+
+def test_the_chip_keeps_a_margin_around_its_text(qapp, app_context, managed_qobject):
+    """The reported defect: a descender such as 'g' touched the chip border."""
+    palette = _palette('#f4f5f7', '#202124', '#ffffff', '#edf0f4', '#3268b2', '#ffffff')
+    factory = dag.CommitFactory()
+    commit = _commit(app_context, factory, 'commit')
+    commit.tags = ['heads/g-branch']
+    tree = _tree(app_context, managed_qobject)
+    metrics = QtGui.QFontMetrics(tree.font())
+
+    painter = _draw_row_labels(tree, commit, palette)
+
+    chip = painter.rounded_rects[0]
+    assert GraphDelegate.LABEL_V_PADDING >= 2
+    assert GraphDelegate.LABEL_TEXT_OFFSET >= 4
+    assert chip.height() == metrics.height() + 2 * GraphDelegate.LABEL_V_PADDING
+    assert chip.width() == (
+        metrics.horizontalAdvance('g-branch') + 2 * GraphDelegate.LABEL_TEXT_OFFSET
+    )
+
+
+@pytest.mark.parametrize('point_size', (9, 12, 18, 24))
+def test_the_row_leaves_a_margin_around_the_chip_it_holds(
+    point_size, qapp, app_context, managed_qobject
+):
+    """At 11 pt and up the chip used to be exactly as tall as its own row.
+
+    paint() clips to option.rect, so a chip that fills the row loses its
+    rounded corners and overflows the top by a pixel.
+    """
+    factory = dag.CommitFactory()
+    commit = _commit(app_context, factory, 'commit')
+    commit.tags = ['heads/g-branch']
+    tree = _tree(app_context, managed_qobject)
+    tree.add_commits([commit], _graph_result([commit]))
+    option = QtWidgets.QStyleOptionViewItem()
+    option.font = QtGui.QFont(tree.font())
+    option.font.setPointSize(point_size)
+    option.fontMetrics = QtGui.QFontMetrics(option.font)
+
+    hint = tree.graph_delegate.sizeHint(
+        option, tree.indexFromItem(tree.topLevelItem(0), 0)
+    )
+
+    chip_height = option.fontMetrics.height() + 2 * GraphDelegate.LABEL_V_PADDING
+    assert GraphDelegate.ROW_V_MARGIN >= 2
+    assert hint.height() >= chip_height + 2 * GraphDelegate.ROW_V_MARGIN

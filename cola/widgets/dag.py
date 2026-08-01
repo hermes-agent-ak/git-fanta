@@ -1280,7 +1280,9 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
 
     LABEL_BORDER = 3
     LABEL_SPACING = 4
-    LABEL_TEXT_OFFSET = 2
+    LABEL_TEXT_OFFSET = 4
+    LABEL_V_PADDING = 2
+    ROW_V_MARGIN = 2
     ANIMATION_DURATION = 50
     # The Branches dock marks the current branch with a star icon
     # (cola/widgets/branch.py). The inline graph draws text, so it uses the glyph.
@@ -1513,7 +1515,7 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         """Draw branch/tag labels and return total width used."""
         current_x = start_x
         x_offset = self.LABEL_TEXT_OFFSET
-        y_offset = 0
+        y_offset = self.LABEL_V_PADDING
 
         chip_fills = None
         if style is not None:
@@ -1621,7 +1623,12 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
 
         total_width = graph_width + 8 + labels_width + 8 + text_width
         total_width = max(total_width, self.LANE_WIDTH * 4)
-        height = max(self.ROW_HEIGHT, option.fontMetrics.height() + 4)
+        # A chip is the text plus its vertical padding on both sides, and the
+        # row keeps a margin above and below it. Without that margin a large
+        # desktop font makes the chip exactly as tall as its row, and the
+        # rounded corners are clipped away.
+        chip_height = option.fontMetrics.height() + 2 * self.LABEL_V_PADDING
+        height = max(self.ROW_HEIGHT, chip_height + 2 * self.ROW_V_MARGIN)
         return QtCore.QSize(total_width, height)
 
     def _label_hit_test(
@@ -1639,6 +1646,7 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         row = index.data(GRAPH_ROW_ROLE)
         prev_row = index.data(GRAPH_PREV_ROW_ROLE)
         x_offset = self.LABEL_TEXT_OFFSET
+        y_offset = self.LABEL_V_PADDING
         current_x = rect.left() + self._graph_width(row, prev_row) + 8
         mid_y = rect.center().y()
         text_height = font_metrics.height()
@@ -1650,8 +1658,8 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
             )
             box_left = current_x - x_offset
             box_right = current_x + text_width + x_offset
-            box_top = mid_y - text_height / 2
-            box_bottom = mid_y + text_height / 2
+            box_top = mid_y - text_height / 2 - y_offset
+            box_bottom = mid_y + text_height / 2 + y_offset
             if box_left <= pos.x() <= box_right and box_top <= pos.y() <= box_bottom:
                 return i, condensed_text is not None
             current_x += text_width + x_offset * 2 + self._get_spacing(condensed_text)
