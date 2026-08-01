@@ -5,7 +5,7 @@ Git Fanta Documentation
     :maxdepth: 3
 
     git-fanta
-    git-dag
+    git-fanta-dag
     thanks
 
 Release Notes

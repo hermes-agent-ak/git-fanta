@@ -78,7 +78,7 @@ pyside6 = [
 [project.scripts]
 fanta = "fanta.main:main"
 git-fanta = "fanta.main:main"
-git-dag = "fanta.dag:main"
+git-fanta-dag = "fanta.dag:main"
 git-fanta-sequence-editor = "fanta.sequenceeditor:main"
 
 [tool.cercis]

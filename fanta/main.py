@@ -158,7 +158,7 @@ def add_config_command(subparser: argparse._SubParsersAction) -> None:
 
 def add_dag_command(subparser: argparse._SubParsersAction) -> None:
     """Add the "git fanta dag" command for visualizing history"""
-    parser = add_command(subparser, 'dag', 'start git-dag', cmd_dag)
+    parser = add_command(subparser, 'dag', 'start git-fanta-dag', cmd_dag)
     parser.add_argument(
         '-c',
         '--count',

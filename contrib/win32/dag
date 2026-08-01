@@ -9,7 +9,7 @@ mydir="$(dirname "$0")"
 parentdir="$(dirname "$mydir")"
 
 # Windows uses 'git-fanta.pyw' instead of 'git-fanta'
-COLA="$parentdir"/bin/git-dag
+COLA="$parentdir"/bin/git-fanta-dag
 if test -f "$COLA".pyw; then
 	COLA="$COLA".pyw
 fi

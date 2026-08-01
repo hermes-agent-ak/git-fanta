@@ -118,15 +118,15 @@ install-man::
 
 .PHONY: uninstall
 uninstall::
-	$(RM) "$(DESTDIR)$(prefix)"/bin/cola
+	$(RM) "$(DESTDIR)$(prefix)"/bin/fanta
 	$(RM) "$(DESTDIR)$(prefix)"/bin/git-fanta
 	$(RM) "$(DESTDIR)$(prefix)"/bin/git-fanta-sequence-editor
-	$(RM) "$(DESTDIR)$(prefix)"/bin/git-dag
+	$(RM) "$(DESTDIR)$(prefix)"/bin/git-fanta-dag
 	$(RM) "$(DESTDIR)$(prefix)"/share/applications/git-fanta.desktop
 	$(RM) "$(DESTDIR)$(prefix)"/share/applications/git-fanta-folder-handler.desktop
-	$(RM) "$(DESTDIR)$(prefix)"/share/applications/git-dag.desktop
-	$(RM) "$(DESTDIR)$(prefix)"/share/metainfo/git-dag.appdata.xml
-	$(RM) "$(DESTDIR)$(prefix)"/share/metainfo/git-fanta.appdata.xml
+	$(RM) "$(DESTDIR)$(prefix)"/share/applications/git-fanta-dag.desktop
+	$(RM) "$(DESTDIR)$(prefix)"/share/metainfo/git-fanta-dag.metainfo.xml
+	$(RM) "$(DESTDIR)$(prefix)"/share/metainfo/git-fanta.metainfo.xml
 	$(RM) "$(DESTDIR)$(prefix)"/share/icons/hicolor/scalable/apps/git-fanta.svg
 	$(RM_R) "$(DESTDIR)$(prefix)"/share/doc/git-fanta
 	$(RM_R) "$(DESTDIR)$(pythondir)"/git_fanta-*

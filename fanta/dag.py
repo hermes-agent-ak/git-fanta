@@ -8,14 +8,14 @@ from .widgets.dag import git_dag
 
 
 def main(argv: list[str] | None = None) -> Any:
-    """Run git-dag"""
+    """Run git-fanta-dag"""
     app.initialize()
     args = parse_args(argv=argv)
     return args.func(args)
 
 
 def shortcut_launch() -> Any:
-    """Run git-dag from a Windows shortcut"""
+    """Run git-fanta-dag from a Windows shortcut"""
     return main(argv=['--prompt'])
 
 
@@ -48,7 +48,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def cmd_dag(args: argparse.Namespace | None) -> int:
-    """Run git-dag via the `git fanta dag` sub-command"""
+    """Run git-fanta-dag via the `git fanta dag` sub-command"""
     context = app.application_init(args, app_name='Git DAG', setup_repo=True)
     view = git_dag(context, args=args, show=False)
     return app.application_start(context, view)

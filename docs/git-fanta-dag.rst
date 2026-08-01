@@ -1,17 +1,19 @@
-=======
-git-dag
-=======
+=============
+git-fanta-dag
+=============
 
 SYNOPSIS
 ========
 
-``git dag [options] [<revision-range>] [[--] [<path>...]]``
+``git-fanta-dag [options] [<revision-range>] [[--] [<path>...]]``
+
+``git fanta dag [options] [<revision-range>] [[--] [<path>...]]``
 
 
 DESCRIPTION
 ===========
 
-`git-dag` is an advanced Git history visualizer that presents ``git log``'s
+`git-fanta-dag` is an advanced Git history visualizer that presents ``git log``'s
 powerful features in an easy to use graphical interface.
 
 

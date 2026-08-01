@@ -329,7 +329,7 @@ def enable_gravatar(context) -> bool:
 
 
 def default_history_browser() -> str:
-    """Return the default history browser (e.g. git-dag, gitk)"""
+    """Return the default history browser (e.g. git-fanta-dag, gitk)"""
     if utils.is_win32():
         # On Windows, a sensible default is "python git-fanta dag"
         # which is different than `gitk` below, but is preferred

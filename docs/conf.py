@@ -79,7 +79,13 @@ release = version  # The full version, including alpha/beta/rc tags.
 authors = 'David Aguilar and contributors'
 man_pages = [
     ('git-fanta', 'git-fanta', 'The highly caffeinated Git GUI', authors, '1'),
-    ('git-dag', 'git-dag', 'The sleek and powerful Git history browser', authors, '1'),
+    (
+        'git-fanta-dag',
+        'git-fanta-dag',
+        'The sleek and powerful Git history browser',
+        authors,
+        '1',
+    ),
 ]
 
 # Sphinx 4.0 creates sub-directories for each man section.

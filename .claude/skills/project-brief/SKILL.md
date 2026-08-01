@@ -35,7 +35,7 @@ until you see the reasoning.
 | `fanta/icons/` | The SVG assets. Check here before assuming an icon exists |
 | `test/` | 41 `*_test.py` files, flat, plus `helper.py`. No `conftest.py` — fixtures are defined per file or imported from `helper` |
 | `docs/plans/` | Implementation plans (see Workflow below) |
-| `bin/` | Launchers: `git-fanta`, `git-dag`, `git-fanta-sequence-editor` |
+| `bin/` | Launchers: `git-fanta`, `git-fanta-dag`, `git-fanta-sequence-editor` |
 
 ## Architecture in five sentences
 

@@ -22,7 +22,7 @@ Git Fanta is a powerful Git GUI with a slick and intuitive user interface.
 
 * [Git Fanta documentation](docs/git-fanta.rst)
 
-* [Git DAG documentation](docs/git-dag.rst)
+* [Git Fanta DAG documentation](docs/git-fanta-dag.rst)
 
 * [Contributing guidelines](CONTRIBUTING.md)
 
@@ -187,7 +187,7 @@ somewhere in your `PATH` such as `~/.local/bin/git-fanta`, and you can launch
 Git Fanta like any other built-in `git` command:
 
     git fanta
-    git dag
+    git fanta-dag
 
 
 ## Install into a Python Virtualenv from Source
@@ -359,7 +359,7 @@ See `git fanta --help-commands` for the full list of commands.
         branch              create a branch
         browse              browse repository
         config              edit configuration
-        dag                 start git-dag
+        dag                 start git-fanta-dag
         diff                view diffs
         fetch               fetch remotes
         find                find files
@@ -482,12 +482,12 @@ launched as-is on Windows because `gitk` is a shell script.
 
 If you are configured to use `gitk`, then change your configuration to
 go through Git's `sh.exe` on Windows.  Similarly, we must go through
-`python.exe` if we want to use `git-dag`.
+`python.exe` if we want to use `git-fanta-dag`.
 
 If you want to use gitk as your history browser open the
 Preferences screen and change the history browser command to:
 
     "C:/Program Files/Git/bin/sh.exe" --login -i C:/Git/bin/gitk
 
-`git-dag` became the default history browser on Windows in `v2.3`, so new
+`git-fanta-dag` is the default history browser on Windows, so new
 users do not need to configure anything.

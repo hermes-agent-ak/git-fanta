@@ -95,8 +95,9 @@ Configure settings. ``git fanta config`` is an entry point for the
 dag
 ---
 
-Start the ``git dag`` Git history browser. ``git fanta dag`` is an entry point for the
-``View > DAG...`` main menu action and can also be launched as ``git dag`` command.
+Start the Git Fanta DAG history browser. ``git fanta dag`` is an entry point for the
+``View > DAG...`` main menu action and can also be launched as the standalone
+``git-fanta-dag`` command.
 
 diff
 ----

@@ -275,7 +275,7 @@ warning per name. `qtutils.create_treeitem()` prefixes by hand with `icons.name_
 everything else goes through `icons.icon()`.
 
 **The three launchers in `bin/` are Python without a `.py` extension.** `git ls-files '*.py'` does
-not match `bin/git-fanta`, `bin/git-dag` or `bin/git-fanta-sequence-editor`; any sweep over the
+not match `bin/git-fanta`, `bin/git-fanta-dag` or `bin/git-fanta-sequence-editor`; any sweep over the
 sources has to name them. `bin/_activate_fanta.py` does have the extension.
 
 **`fanta/resources.py` derives the installation prefix from the package directory name.** Two

@@ -42,7 +42,7 @@ def sha256_hexdigest(value: str) -> core.UStr:
     lower-cased before hashing. https://docs.gravatar.com/rest/hash/
 
     SHA256 also resolves the FIPS crash that MD5 caused: on FIPS-enabled
-    systems hashlib.md5() raises ValueError and aborted git-dag (exit 134) the
+    systems hashlib.md5() raises ValueError and aborted git-fanta-dag (exit 134) the
     moment a commit was viewed (https://github.com/git-cola/git-cola/issues/1157).
     The old fix passed usedforsecurity=False to MD5, but that only exists on
     Python 3.9+ and still asks OpenSSL to permit a FIPS-disallowed algorithm.

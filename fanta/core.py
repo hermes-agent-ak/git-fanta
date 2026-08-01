@@ -321,7 +321,7 @@ def _fork_win32(
 ) -> int:
     """Launch a background process using crazy win32 voodoo."""
     # This is probably wrong, but it works.  Windows.. Wow.
-    if args[0] == 'git-dag':
+    if args[0] == 'git-fanta-dag':
         # win32 can't exec python scripts
         args = [sys.executable] + args
 
