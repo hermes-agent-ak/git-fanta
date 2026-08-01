@@ -127,7 +127,11 @@ def test_the_generator_changes_nothing_else():
 
 
 def test_the_version_output_names_git_fanta():
-    """`cola version 1.0.1` in a support ticket reads as git-cola being installed."""
+    """Git Fanta installs alongside git-cola, so the name in --version matters.
+
+    A support ticket, a log line or a release check that says "cola version
+    1.0.1" names the wrong application.
+    """
     from fanta import version as version_module
 
     assert version_module.fanta_version().startswith('git-fanta version ')
@@ -150,6 +154,28 @@ def test_the_launcher_reports_the_fork_name():
     env = dict(os.environ, QT_QPA_PLATFORM='offscreen')
     result = subprocess.run(
         [sys.executable, str(REPO_ROOT / 'bin' / 'git-fanta'), '--version'],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=str(REPO_ROOT),
+        env=env,
+    )
+
+    assert result.stdout.startswith('git-fanta version ')
+
+
+def test_the_module_entry_point_runs():
+    """`python -m fanta --version` is documented in the README.
+
+    The rename from cola to fanta stripped everything but the docstring out of
+    fanta/__main__.py, so the module ran, printed nothing and exited 0.
+    """
+    import os
+    import subprocess
+
+    env = dict(os.environ, QT_QPA_PLATFORM='offscreen')
+    result = subprocess.run(
+        [sys.executable, '-m', 'fanta', '--version'],
         capture_output=True,
         text=True,
         check=True,

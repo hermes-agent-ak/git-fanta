@@ -35,6 +35,8 @@ UPSTREAM_MARKERS = (
     # Git Fanta is installed next to git-cola rather than replacing it, so the
     # sources have to talk about the other application on purpose.
     'alongside git-cola',
+    # The README section that credits the project this was forked from.
+    'Based on git-cola',
 )
 
 # These files and prefixes are skipped entirely.
@@ -54,7 +56,7 @@ LEGACY_PRODUCT_NAMES = ('git-cola', 'git_cola', 'Git Cola', 'git cola')
 # Concrete upstream references that must survive the rename.
 # Format: (path relative to the repository root, expected substring)
 PROTECTED_REFERENCES = (
-    ('README.md', 'https://github.com/git-cola/git-cola.git'),
+    ('README.md', 'https://github.com/git-cola/git-cola'),
     ('fanta/gravatar.py', 'https://git-cola.github.io/images/git-64x64.jpg'),
     ('fanta/widgets/about.py', 'https://git-cola.gitlab.io/share/doc/git-cola/'),
     ('fanta/widgets/log.py', 'https://git-cola.readthedocs.io/en/latest/'),

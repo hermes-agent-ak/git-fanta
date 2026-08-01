@@ -2,29 +2,39 @@
 
 Git Fanta is a powerful Git GUI with a slick and intuitive user interface.
 
-    git clone https://github.com/git-cola/git-cola.git
+    git clone https://github.com/hermes-agent-ak/git-fanta.git
 
 [![License](https://img.shields.io/:license-GPL-green.svg)](LICENSE)
-[![Build status](https://github.com/git-cola/git-cola/actions/workflows/ci.yml/badge.svg?event=push)](https://github.com/git-cola/git-cola/actions/workflows/main.yml)
-[![OpenSSF Best Practices](https://bestpractices.coreinfrastructure.org/projects/251/badge)](https://bestpractices.coreinfrastructure.org/projects/251)
-[![pre-commit.ci](https://results.pre-commit.ci/badge/github/git-cola/git-cola/main.svg)](https://results.pre-commit.ci/latest/github/git-cola/git-cola/main)
+[![Build status](https://github.com/hermes-agent-ak/git-fanta/actions/workflows/ci.yml/badge.svg?event=push)](https://github.com/hermes-agent-ak/git-fanta/actions/workflows/ci.yml)
 
-* [Screenshots](https://git-cola.github.io/screenshots.html)
-
-* [Downloads](https://git-cola.github.io/downloads.html)
+* [Downloads](https://github.com/hermes-agent-ak/git-fanta/releases)
 
 
 # Documentation
 
-* [Keyboard shortcuts](https://git-cola.github.io/share/doc/git-cola/hotkeys.html)
+* [Keyboard shortcuts](fanta/data/hotkeys.html) (also under `Help > Keyboard shortcuts`)
 
-* [HTML documentation](https://git-cola.readthedocs.io/en/latest/)
+* [HTML documentation](docs/) (build it with `garden doc/html`)
 
 * [Git Fanta documentation](docs/git-fanta.rst)
 
 * [Git Fanta DAG documentation](docs/git-fanta-dag.rst)
 
 * [Contributing guidelines](CONTRIBUTING.md)
+
+
+# Based on git-cola
+
+Git Fanta is a fork of git-cola, David Aguilar's Git GUI, and inherits its
+history and its GPL-2.0 licence. That project is separate from this one and
+still maintained:
+
+* Upstream repository: <https://github.com/git-cola/git-cola>
+* Upstream homepage: <https://git-cola.gitlab.io/>
+
+Report Git Fanta bugs to
+<https://github.com/hermes-agent-ak/git-fanta/issues> -- not to the upstream
+tracker.
 
 
 # Requirements
@@ -120,53 +130,21 @@ sudo apt install python3-pyqt6 python3-pyqt6.qtsvg python3-pyqt6.qtwebengine
 At this point you should be able to launch `./bin/git-fanta` from the source tree and
 there is nothing more to do.
 
-The further instructions below detail how to install Git Fanta from PyPI or how to
-install it into a location separate from the source tree.
+The further instructions below detail how to install Git Fanta into a location
+separate from the source tree.
 
 
 ## Linux
 
-Linux is it! Your distro has probably already packaged `git-fanta`.
-If not, please file a bug against your distribution ;-)
+No distribution packages Git Fanta yet. Install it from source using one of the
+methods below, or grab a build from the
+[releases page](https://github.com/hermes-agent-ak/git-fanta/releases).
 
-### Arch
+Git Fanta installs alongside git-cola. Installing one does not replace or remove
+the other: they share no command, no desktop file and no configuration
+directory.
 
-Available in the [AUR](https://aur.archlinux.org/packages/git-fanta/).
-
-### Debian, Ubuntu
-
-    apt install git-fanta
-
-### Fedora
-
-    dnf install git-fanta
-
-### Gentoo
-
-    emerge git-fanta
-
-### OpenSUSE, SLE
-
-    zypper install git-fanta
-
-### Slackware
-
-Available in [SlackBuilds.org](http://slackbuilds.org/result/?search=git-fanta).
-
-### Ubuntu
-
-[See here](https://packages.ubuntu.com/search?keywords=git-fanta) for the
-versions that are available in Ubuntu's repositories.
-
-## FreeBSD
-
-    # Install from official binary packages
-    pkg install -r FreeBSD devel/git-fanta
-
-    # Build from source
-    cd /usr/ports/devel/git-fanta && make clean install
-
-## Install into a Python Virtualenv from PyPI using pip
+## Install into a Python Virtualenv using pip
 
 **IMPORTANT**: never run `pip install` or `garden install` outside of a
 Python virtualenv or as root!
@@ -175,11 +153,11 @@ Python virtualenv or as root!
 your package manager then it is highly recommended to install those dependencies using
 your system's package manager. See the section above for details.
 
-One way to install the latest released version is to use `venv` (virtualenv) and `pip`.
-This installs [git-cola from pypi.org](https://pypi.org/project/git-cola/).
+Git Fanta is not published on PyPI. Install it from a checkout using `venv`
+(virtualenv) and `pip`.
 
     python3 -m venv --system-site-packages env3
-    ./env3/bin/pip install git-fanta
+    ./env3/bin/pip install .
     ./env3/bin/git-fanta
 
 Add the `env3/bin` directory to your `PATH` or symlink to `bin/git-fanta` from
@@ -376,16 +354,13 @@ See `git fanta --help-commands` for the full list of commands.
 
 ## Development
 
-[![Good First Issues](https://img.shields.io/github/issues/git-cola/git-cola/good%20first%20issue?style=flat&logo=github&logoColor=green&label=Good%20First%20issues)](https://github.com/git-cola/git-cola/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22)
-[![Help Wanted Issues](https://img.shields.io/github/issues/git-cola/git-cola/help%20wanted?style=flat&logo=github&logoColor=b545d1&label=%22Help%20Wanted%22%20issues)](https://github.com/git-cola/git-cola/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22)
-[![Help Wanted PRs](https://img.shields.io/github/issues-pr/git-cola/git-cola/help%20wanted?style=flat&logo=github&logoColor=b545d1&label=%22Help%20Wanted%22%20PRs)](https://github.com/git-cola/git-cola/pulls?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22)
-[![Open Issues](https://img.shields.io/github/issues/git-cola/git-cola?style=flat&logo=github&logoColor=red&label=Issues)](https://github.com/git-cola/git-cola/issues?q=is%3Aopen)
+[![Open Issues](https://img.shields.io/github/issues/hermes-agent-ak/git-fanta?style=flat&logo=github&logoColor=red&label=Issues)](https://github.com/hermes-agent-ak/git-fanta/issues?q=is%3Aopen)
 
 If you already have Git Fanta's dependencies installed then you can
-start `cola` as a Python module if you have the source code available.
+start Git Fanta as a Python module if you have the source code available.
 
-    python -m cola
-    python -m cola dag
+    python -m fanta
+    python -m fanta dag
 
 
 The following commands should be run during development:
@@ -402,9 +377,9 @@ The following commands should be run during development:
 The test suite can be found in the [test](test) directory.
 
 Commits and pull requests are automatically tested for code quality
-using [GitHub Actions](https://github.com/git-cola/git-cola/actions/workflows/main.yml).
+using [GitHub Actions](https://github.com/hermes-agent-ak/git-fanta/actions/workflows/ci.yml).
 
-Auto-format `cola/i18n/*.po` files before committing when updating translations:
+Auto-format `fanta/i18n/*.po` files before committing when updating translations:
 
     $ garden po
 
@@ -417,9 +392,9 @@ When submitting patches, consult the
 Git Fanta installs its modules into the default Python site-packages directory
 (e.g. `lib/pythonX.Y/site-packages`) using setuptools.
 
-While end-users can use `pip install git-fanta` to install Git Fanta, distribution
-packagers should use the `garden -D prefix=/usr install` process. Git Fanta's Garden
-recipe wraps `pip install --prefix=<prefix>` to provide a packaging-friendly
+While end-users can use `pip install .` from a checkout, distribution packagers
+should use the `garden -D prefix=/usr install` process. Git Fanta's Garden recipe
+wraps `pip install --prefix=<prefix>` to provide a packaging-friendly
 `garden install` target.
 
 

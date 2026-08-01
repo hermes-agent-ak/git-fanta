@@ -148,8 +148,8 @@ jobs:
           start, and Windows SmartScreen warns on first run. Check what you
           downloaded against `SHA256SUMS`.
 
-          Git Fanta installs alongside git-cola. Nothing in this release
-          replaces or removes a git-cola installation.
+          Git Fanta installs alongside git-cola: nothing in this release
+          touches an existing installation of it.
           NOTES
       - name: Publish
         env:
