@@ -101,8 +101,8 @@ Plan: `docs/plans/2026-07-30-rename-to-git-fanta.md`. Implemented across `11e043
   `gitcfg._key_candidates()` probes `fanta.*` then `cola.*` (`fanta/gitcfg.py:253`),
   `compat.getenv_with_legacy()` does the same for the env vars (`fanta/compat.py:101`), and
   `gitcmds.prepare_commit_message_hook()` still honours a `cola-prepare-commit-msg` hook.
-  The config-directory copy that used to sit alongside them was removed in work package 11 --
-  see below.
+  The config-directory copy that used to sit alongside them was removed in work package 13,
+  because this fork installs alongside git-cola rather than replacing it.
 - **`git fanta cola` still works.** The sub-command was renamed with an argparse alias
   (`cola/main.py:102`), so old scripts and shell history do not break.
 - **The `.po` source references still say `cola/`,** because the package name did not change.
@@ -382,6 +382,44 @@ and in both cases the fix was to stop sorting rather than to sort differently.
   Its nineteen tests are characterization tests: they described the behaviour before the change
   and were not touched by it.
 
+## 13. Git Fanta installs alongside git-cola
+
+Design record: `docs/plans/2026-08-01-deployment-separation.md`. Seven commits,
+`d19f5f72 -> a04568af`.
+
+The package rename made `import cola` and `import fanta` coexist. This work package made
+everything the two projects show the *outside* distinct: installed commands, desktop files,
+AppStream ids, the Qt application name, the configuration directory and the version number.
+
+**Decisions that later work must not undo:**
+
+- **No `git-dag` compatibility alias.** It is tempting to keep installing `git-dag` "so old
+  scripts keep working". That alias is precisely the collision: the console script, `/usr/bin`
+  entry, `.desktop` file and AppStream id were all shared, and the last package installed won.
+  The fork installs `git-fanta-dag`; `git fanta dag` is the in-application spelling.
+- **`app_name='Git Fanta DAG'` in both launch paths.** `enforce_single_instance()` derives the
+  `QSystemSemaphore` key and shared memory id from `context.app_name`. `fanta/dag.py:cmd_dag` and
+  `fanta/main.py:cmd_dag` must agree; `test/dag_test.py` pins both.
+- **No silent configuration migration, ever.** `resources.migrate_config_home()`,
+  `resources.legacy_config_home()` and the fallbacks in `Settings.asdict()` that read the
+  other project's configuration are gone. `test/config_isolation_test.py` asserts the helpers no longer
+  exist. An explicit, user-triggered import action would be the right successor; adopting
+  another application's state unasked is not.
+- **The read-only `cola.*` git-config fallback stays** and is documented as transitional in
+  `docs/git-fanta.rst`. Git Fanta never writes a `cola.` key.
+- **The macOS CI job must not install the upstream Homebrew formula.** It hid undeclared
+  dependencies behind that
+  formula. Two orientation notes used to record the brew line as deliberate; they were right when
+  written and wrong afterwards.
+- **`CFBundleVersion` is substituted before `CFBundleShortVersionString`.** `sed`'s `.` matches
+  any character, so the three-part pattern would eat part of the four-part value. The order is in
+  `garden.yaml`, the Makefile and a comment in `Info.plist`.
+- **`pynsist.generated.cfg` sits next to `pynsist.cfg`, not under `build/`.** Every path inside a
+  pynsist config resolves relative to that config file's own directory.
+- **The version is the fork's own 1.x line.** `fanta/_version.py`, `fallback_version` and
+  `pynsist.cfg` must agree; `test/version_test.py` enforces it and rejects a 4.x number, which
+  would read as an upstream release.
+
 ## Where the fork's tests live
 
 - `test/widgets_dag_history_test.py` — `CommitHistoryWidget`, `GitDAG`, state round-trips,
@@ -399,9 +437,13 @@ and in both cases the fix was to stop sorting rather than to sort differently.
   sources or filenames, the allow-listed upstream references intact, `CHANGES.rst` untouched, no
   leftover `'cola.<key>'` config literals, and the coupling between `pyproject.toml`'s `name` and
   `cola/version.py`.
-- `test/env_rename_test.py`, `test/config_home_migration_test.py`,
-  `test/prepare_commit_msg_hook_test.py` — one file per backwards fallback introduced by the
-  rename. If you remove a fallback, these are the tests that are supposed to stop you.
+- `test/env_rename_test.py`, `test/prepare_commit_msg_hook_test.py` — one file per
+  backwards fallback introduced by the rename. If you remove a fallback, these are the
+  tests that are supposed to stop you.
+- `test/config_isolation_test.py` — the opposite invariant: Git Fanta never reads or
+  copies the configuration directory of the project it was forked from.
+- `test/macos_bundle_test.py`, `test/version_test.py` — the packaging invariants of work
+  package 13: an unambiguous `Info.plist` and one version across all three packaging files.
 - `test/widgets_dag_history_test.py` enthält zusätzlich die Tabellentests für
   `commit_message_file_spans()` und die Format-Tests des Beschreibungsfelds.
 - `test/widgets_history_filelist_test.py` additionally holds the table test for

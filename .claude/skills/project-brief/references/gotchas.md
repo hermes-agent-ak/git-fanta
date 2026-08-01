@@ -241,6 +241,15 @@ pytest capture that is an error, not a `False`. Monkeypatch it in every test tha
 **`cmds.do()` swallows exceptions** into `Interaction.critical` (`cola/cmds.py:3591`). A broken
 command does not fail a test by itself; assert on the git state or the model instead.
 
+**The full offscreen suite segfaults intermittently, and it is not your change.** A whole-suite
+run prints `Fatal Python error: Segmentation fault` roughly one run in four. Measured on
+2026-08-01 over 20 full runs: 4/10 on the branch under development, 2/10 on its merge base, and
+1/6 on the merge-base *production* code with only the branch's new test files copied in. **The
+crash site moves between runs** — `widgets/dag.py` `__init__`, `widgets/main.py` `__init__`,
+`widgets/text.py:_refresh_rect` via `diff.py:resizeEvent`, even inside `subprocess`. The affected
+file always passes when run alone. Before spending a cycle on it, run the same suite on the merge
+base a few times; a single crash on your branch proves nothing.
+
 ## Sorting
 
 **Do not replace `sorted()` with a hand-written algorithm.** Measured on 2000 floats: `sorted()`
