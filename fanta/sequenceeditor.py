@@ -387,6 +387,22 @@ class Editor(QtWidgets.QWidget):
         return status
 
 
+def _selected_rows(
+    all_items: list[RebaseTreeWidgetItem],
+    selected_items: list[RebaseTreeWidgetItem],
+) -> list[int]:
+    """Return the row number of every selected item.
+
+    all_items.index(item) walks the list once per selected row, which is
+    quadratic on a long rebase. RebaseTreeWidgetItem compares by identity, so a
+    single pass over the rows gives the same answer. The map is keyed on id()
+    and not on the item itself: __hash__ returns the oid string, so the item
+    cannot be a dict key at all.
+    """
+    row_of = {id(item): row for row, item in enumerate(all_items)}
+    return [row_of[id(item)] for item in selected_items if id(item) in row_of]
+
+
 class RebaseTreeWidget(standard.DraggableTreeWidget):
     commits_selected = Signal(object)
     external_diff = Signal()
@@ -585,7 +601,7 @@ class RebaseTreeWidget(standard.DraggableTreeWidget):
     def shift_down(self) -> None:
         sel_items = self.selected_items()
         all_items = self.items()
-        sel_idx = sorted([all_items.index(item) for item in sel_items])
+        sel_idx = sorted(_selected_rows(all_items, sel_items))
         if not sel_idx:
             return
         idx = sel_idx[0] + 1
@@ -598,7 +614,7 @@ class RebaseTreeWidget(standard.DraggableTreeWidget):
     def shift_up(self) -> None:
         sel_items = self.selected_items()
         all_items = self.items()
-        sel_idx = sorted([all_items.index(item) for item in sel_items])
+        sel_idx = sorted(_selected_rows(all_items, sel_items))
         if not sel_idx:
             return
         idx = sel_idx[0] - 1
@@ -625,8 +641,9 @@ class RebaseTreeWidget(standard.DraggableTreeWidget):
 
     def move(self, src_idxs: list[int], dst_idx: int) -> None:
         moved_items = []
-        src_base = sorted(src_idxs)[0]
-        for idx in reversed(sorted(src_idxs)):
+        ordered_idxs = sorted(src_idxs)
+        src_base = ordered_idxs[0]
+        for idx in reversed(ordered_idxs):
             item = self.invisibleRootItem().takeChild(idx)
             moved_items.insert(0, [dst_idx + (idx - src_base), item])
 
