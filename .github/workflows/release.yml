@@ -1,0 +1,163 @@
+name: Release
+
+# Publishes a GitHub Release from a v* tag. Nothing here uploads to PyPI and
+# nothing is code-signed or notarized: that needs certificates this repository
+# does not hold, so the macOS bundle and the Windows installer are unsigned and
+# users will see the corresponding warnings.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  check-version:
+    name: Check version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      # A tag that disagrees with fanta/_version.py produces artifacts whose
+      # reported version is not the one people downloaded.
+      - name: The tag must match fanta/_version.py
+        run: |
+          set -eu
+          tag="${GITHUB_REF_NAME#v}"
+          version=$(python3 -c "
+          import re, pathlib
+          text = pathlib.Path('fanta/_version.py').read_text()
+          print(re.search(r\"VERSION\s*=\s*'([^']+)'\", text).group(1))
+          ")
+          echo "tag=$tag version=$version"
+          test "$tag" = "$version"
+
+  sdist-wheel:
+    name: sdist + wheel
+    needs: check-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-python
+          path: dist/*
+
+  windows-installer:
+    name: Windows installer
+    needs: check-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            nsis \
+            python3-qtpy \
+            python3-pyqt6 \
+            python3-pyqt6.qtsvg \
+            python3-pyqt6.qtwebengine \
+            python3-send2trash
+      - name: Install Rust and Garden
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          cargo install garden-tools
+      - name: Install pip-provided dependencies
+        run: |
+          garden dev/virtualenv -vv -D pip-upgrade=true
+          garden dev -vv
+      - name: Build the installer
+        run: |
+          rm -fr build
+          garden pynsist -vv
+          mv build/nsis/git-fanta*.exe "git-fanta-${GITHUB_REF_NAME}-installer.exe"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-windows
+          path: git-fanta-*-installer.exe
+
+  macos-app:
+    name: macOS app
+    needs: check-version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          brew untap aws/tap || true
+          brew install git
+      - name: Install Rust and Garden
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          cargo install garden-tools
+      - name: Build the app bundle
+        run: garden macos/app -vv -D cola-app='${TREE_PATH}/local/git-fanta.app'
+      - name: Zip the bundle
+        run: |
+          cd local
+          zip -qry "../git-fanta-${GITHUB_REF_NAME}-macos.zip" git-fanta.app
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-macos
+          path: git-fanta-*-macos.zip
+
+  publish:
+    name: Publish GitHub Release
+    needs:
+      - sdist-wheel
+      - windows-installer
+      - macos-app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v6
+        with:
+          path: artifacts
+          pattern: dist-*
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd artifacts
+          sha256sum * >SHA256SUMS
+          cat SHA256SUMS
+      - name: Release notes
+        run: |
+          cat >notes.md <<'NOTES'
+          The downloads below are **unsigned**: macOS needs
+          `xattr -dr com.apple.quarantine git-fanta.app` before the app will
+          start, and Windows SmartScreen warns on first run. Check what you
+          downloaded against `SHA256SUMS`.
+
+          Git Fanta installs alongside git-cola. Nothing in this release
+          replaces or removes a git-cola installation.
+          NOTES
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Git Fanta $GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --generate-notes \
+            --verify-tag
+          gh release upload "$GITHUB_REF_NAME" artifacts/* --clobber
