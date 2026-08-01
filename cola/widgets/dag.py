@@ -1087,6 +1087,7 @@ class InlineGraphStyle:
     chip_text_candidates: tuple[QtGui.QColor, ...]
     chip_other: QtGui.QColor
     chip_remote: QtGui.QColor
+    chip_tag: QtGui.QColor
     chip_head: QtGui.QColor
     lane_colors: tuple[QtGui.QColor, ...]
 
@@ -1289,8 +1290,26 @@ def _distinct_chip_backgrounds(colors, palette_colors):
     value = 0.34 if average_luminance > 0.45 else 0.76
     return tuple(
         QtGui.QColor.fromHsvF((hue + shift) % 1.0, saturation, value, 1.0)
-        for shift in (0.0, 0.34, 0.67)
+        for shift in (0.0, 0.25, 0.5, 0.75)
     )
+
+
+def _tag_chip_color(highlight, base):
+    """Return the chip color tags are painted with.
+
+    Every other chip is mixed from the palette highlight, so a tag drawn in one
+    of them disappears among the branches. Rotating the highlight's hue half a
+    turn keeps the color palette-derived and puts the tag on the opposite side
+    of the wheel; the saturation and value floors keep a greyscale palette from
+    producing a fourth grey.
+    """
+    hue, saturation, value, _alpha = _opaque_color(highlight).getHsvF()
+    if hue < 0.0:
+        hue = 0.0
+    rotated = QtGui.QColor.fromHsvF(
+        (hue + 0.5) % 1.0, max(0.55, saturation), max(0.45, value), 1.0
+    )
+    return _mix_color(rotated, _opaque_color(base), 0.18)
 
 
 def inline_graph_style(palette):
@@ -1300,10 +1319,11 @@ def inline_graph_style(palette):
     text = _opaque_color(palette.text().color())
     highlight = _opaque_color(palette.highlight().color())
     highlighted_text = _opaque_color(palette.highlightedText().color())
-    chip_other, chip_remote, chip_head = _distinct_chip_backgrounds(
+    chip_other, chip_remote, chip_tag, chip_head = _distinct_chip_backgrounds(
         (
             _mix_color(base, alternate, 0.72),
             _mix_color(alternate, highlight, 0.38),
+            _tag_chip_color(highlight, base),
             _mix_color(highlight, base, 0.24),
         ),
         (base, alternate, highlight, text, highlighted_text),
@@ -1326,7 +1346,7 @@ def inline_graph_style(palette):
             chip_text_candidates, (highlight, base, alternate)
         )
     chip_text = _best_contrast(
-        chip_text_candidates, (chip_other, chip_remote, chip_head)
+        chip_text_candidates, (chip_other, chip_remote, chip_tag, chip_head)
     )
     head_fill = _mix_color(highlight, base, 0.16)
     # The ring around the HEAD node used to be a fixed mix of highlight and
@@ -1356,6 +1376,7 @@ def inline_graph_style(palette):
         chip_text_candidates=chip_text_candidates,
         chip_other=chip_other,
         chip_remote=chip_remote,
+        chip_tag=chip_tag,
         chip_head=chip_head,
         lane_colors=_lane_colors(palette),
     )
@@ -1612,17 +1633,24 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
 
         chip_fills = None
         if style is not None:
-            chip_fills = (style.chip_other, style.chip_remote, style.chip_head)
+            chip_fills = (
+                style.chip_other,
+                style.chip_remote,
+                style.chip_tag,
+                style.chip_head,
+            )
             if row_background is not None:
                 chip_fills = readable_chip_fills(chip_fills, row_background)
 
         for i, (tag, display_text, condensed_text) in enumerate(self._row_labels(tags)):
             if painter is not None:
                 brush = chip_fills[0]
-                if tag == _HEAD_REF or tag.startswith(_TAGS_PREFIX):
+                if tag.startswith(_TAGS_PREFIX):
+                    brush = chip_fills[2]
+                elif tag == _HEAD_REF:
                     brush = chip_fills[1]
                 elif tag.startswith(_HEADS_PREFIX):
-                    brush = chip_fills[2]
+                    brush = chip_fills[3]
                 candidates = style.chip_text_candidates
                 if selected_text is not None:
                     candidates = (_opaque_color(selected_text),) + candidates

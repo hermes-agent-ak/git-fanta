@@ -1287,12 +1287,16 @@ def test_selected_inline_summary_and_each_chip_have_contrasting_text(
     assert painter.fills == [palette.highlight().color()]
     expected_background = palette.highlight().color()
     expected_chips = readable_chip_fills(
-        (style.chip_other, style.chip_remote, style.chip_head),
+        (style.chip_other, style.chip_remote, style.chip_tag, style.chip_head),
         expected_background,
     )
-    assert [background for _pen, background in painter.rounded_styles] == list(
-        expected_chips
-    )
+    # 'other' is the fallback chip, 'tags/v1' the tag chip, 'heads/main' the
+    # local branch chip. chip_remote paints HEAD, which this row does not carry.
+    assert [background for _pen, background in painter.rounded_styles] == [
+        expected_chips[0],
+        expected_chips[2],
+        expected_chips[3],
+    ]
     for pen, background in painter.rounded_styles:
         assert _contrast(pen, background) >= 4.5
     text_colors = dict(painter.text_colors)
@@ -4435,3 +4439,67 @@ def test_the_row_leaves_a_margin_around_the_chip_it_holds(
     chip_height = option.fontMetrics.height() + 2 * GraphDelegate.LABEL_V_PADDING
     assert GraphDelegate.ROW_V_MARGIN >= 2
     assert hint.height() >= chip_height + 2 * GraphDelegate.ROW_V_MARGIN
+
+
+def _chip_fills(style):
+    return (style.chip_other, style.chip_remote, style.chip_tag, style.chip_head)
+
+
+@pytest.mark.parametrize(
+    'palette',
+    [
+        _palette('#f4f5f7', '#202124', '#ffffff', '#edf0f4', '#3268b2', '#ffffff'),
+        _palette('#202328', '#e8eaed', '#17191d', '#292d33', '#6ea8fe', '#101216'),
+    ],
+    ids=('light', 'dark'),
+)
+def test_a_tag_does_not_share_a_chip_color_with_anything(qapp, palette):
+    """A tag used to be painted exactly like the detached HEAD chip."""
+    style = inline_graph_style(palette)
+
+    fills = _chip_fills(style)
+
+    assert len({fill.rgba() for fill in fills}) == 4
+    assert style.chip_tag.getHsvF()[0] != style.chip_head.getHsvF()[0]
+
+
+@pytest.mark.parametrize('palette', _adversarial_chip_palettes())
+def test_four_chip_colors_stay_distinct_and_readable_on_any_row(qapp, palette):
+    """Adding a fourth color must not collapse the set on a hostile palette."""
+    style = inline_graph_style(palette)
+    fills = _chip_fills(style)
+
+    for background in (
+        _opaque_color(palette.highlight().color()),
+        _opaque_color(palette.base().color()),
+    ):
+        adapted = readable_chip_fills(fills, background)
+        assert len({color.rgba() for color in adapted}) == 4
+        for color in adapted:
+            assert _color_contrast(color, background) >= 2.5
+
+
+def test_each_ref_kind_gets_its_own_chip_color(qapp, app_context, managed_qobject):
+    """other -> fallback, HEAD -> its own, tags/ -> the tag color, heads/ -> branch."""
+    palette = _palette('#f4f5f7', '#202124', '#ffffff', '#edf0f4', '#3268b2', '#ffffff')
+    style = inline_graph_style(palette)
+    tree = _tree(app_context, managed_qobject)
+    painter = _TextRecordingPainter()
+
+    tree.graph_delegate._draw_labels(
+        painter,
+        13,
+        ['other', 'HEAD', 'tags/v1', 'heads/main'],
+        GraphDelegate.LANE_WIDTH + 8,
+        QtGui.QFontMetrics(tree.font()),
+        None,
+        style,
+    )
+
+    backgrounds = [background for _pen, background in painter.rounded_styles]
+    assert backgrounds == [
+        style.chip_remote,
+        style.chip_other,
+        style.chip_tag,
+        style.chip_head,
+    ]
