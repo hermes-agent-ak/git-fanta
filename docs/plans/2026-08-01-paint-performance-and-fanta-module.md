@@ -2,7 +2,7 @@
 status: open
 ---
 
-# The history repaints 26x faster, and the Python package becomes `fanta`
+# The history repaints 26x faster, the file icons come back, and the package becomes `fanta`
 
 **Created:** 2026-08-01
 **Branch:** commit onto whatever branch is checked out when you start. **Never onto `main`** —
@@ -11,8 +11,9 @@ says `main`. This plan does not switch branches.
 **Baseline:** written and measured against `562b1338`, i.e. **after** the five history-view
 improvements of `docs/plans/2026-08-01-history-ui-improvements.md` landed. Every anchor below was
 re-verified against that tree.
-**Affects:** `cola/widgets/dag.py` for the performance work; then a repository-wide rename of the
-Python package directory `cola/` to `fanta/`, touching 259 moved files and 56 edited ones.
+**Affects:** `cola/widgets/dag.py` for the performance work, one line in `cola/widgets/filelist.py`
+for the icon fix, then a repository-wide rename of the Python package directory `cola/` to
+`fanta/`, touching 259 moved files and 56 edited ones.
 
 ---
 
@@ -21,7 +22,7 @@ Python package directory `cola/` to `fanta/`, touching 259 moved files and 56 ed
 This plan is written so that it can be executed **without prior knowledge and without making any
 decisions of your own**.
 
-- **Do the tasks strictly in order 0 → 4.** Skip nothing. Each task leaves the suite green.
+- **Do the tasks strictly in order 0 → 5.** Skip nothing. Each task leaves the suite green.
 - **One task = one commit.** The commit message is written out verbatim at the end of each task.
   Use it as it stands.
 - **Commit only. Never push.** No task in this plan runs `git push`, and none should. Do not open
@@ -52,13 +53,13 @@ contains no absolute paths and needs none.
 | `garden fmt` | `cercis bin bin/git-* <pkg> test extras/sphinxtogithub` followed by `isort --force-single-line-imports --py=39 --no-lines-before=STDLIB bin bin/git-* <pkg> test extras/sphinxtogithub` |
 | `garden check/fmt` | `cercis --check bin bin/git-* <pkg> test extras/sphinxtogithub` |
 
-`<pkg>` is `cola` up to and including Task 2, and `fanta` from Task 3 onward.
+`<pkg>` is `cola` up to and including Task 3, and `fanta` from Task 4 onward.
 
-Standard test command — **the package directory is part of it**, so it changes in Task 3:
+Standard test command — **the package directory is part of it**, so it changes in Task 4:
 
 ```bash
-QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q cola test     # Tasks 0-2
-QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q fanta test    # Tasks 3-4
+QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q cola test     # Tasks 0-3
+QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q fanta test    # Tasks 4-5
 ```
 
 ---
@@ -91,11 +92,20 @@ get memoized on the identity of the colors they were given. Measured afterwards:
 
 ### 1.2 The rename
 
+
 The Python package is renamed from `cola` to `fanta`, so that `import fanta` is how the code is
 called. The scope is deliberately **shallow**: the import name, the packaging metadata, the build
 and launcher files, and the handful of literals that are *functionally* the package path.
 
 Everything else that merely contains the word "cola" is **left alone** — see §3.
+
+### 1.3 The missing file-status icons
+
+Every run prints `qt.svg: Cannot open file '<the opened repository>/plus.svg'`, and every
+file-status icon in the history's file panel is invisible. One line is responsible
+(`cola/widgets/filelist.py:252`): it hands a bare basename to `icons.from_name()`, whose docstring
+asks for `"icons:basename.svg"`. Without the prefix Qt resolves the name against the process
+working directory — the repository the user opened — instead of the icon search path.
 
 ### Settled decisions
 
@@ -110,6 +120,8 @@ Everything else that merely contains the word "cola" is **left alone** — see �
 | Does the package rename keep a `cola` compatibility shim? | **No.** It is an internal package with no external consumers; a shim would be dead weight. The *user-facing* `git fanta cola` sub-command alias is a different thing and stays. |
 | How deep does the rename go? | Imports, module-path string literals, packaging metadata, build files, launchers, and the four literals that are really the install path. Comments, docstrings, class names, config keys and catalog references stay — §3. |
 | Why is the rename one commit and not five? | A rename is atomic by nature: after moving the directory, the suite is red until the last reference is rewritten. Splitting it would mean committing a red tree. |
+| Which icon call is wrong? | `icons.from_name(basename)` in `cola/widgets/filelist.py:252`. Every other call site in the code base either prefixes the name itself (`qtutils.create_treeitem` does `icons.name_from_basename(icon_name)`) or goes through `icons.icon()`. The fix is to use `icons.icon()`, which *is* `from_name(name_from_basename(basename))`. |
+| Is the user's `ellipsis.svg` / `star.svg` / `git-branch.svg` warning the same bug? | **No, and this plan does not claim to fix those.** Those three resolve correctly — verified: `icons.ellipsis()`, `icons.star()` and `icons.branch()` all render from a foreign working directory. Their warnings named a fully resolved path under `cola/icons/`, which means the search path was working and the files were briefly absent; the package directory was being moved at the time. The reproducible defect is the file panel, and that one is fixed here. |
 | Performance first or rename first? | **Performance first.** Doing it the other way round would make every anchor in Tasks 1 and 2 point into `fanta/`, and the measurements were taken against `cola/`. |
 
 ## 2. Ground truth — all measured
@@ -199,6 +211,39 @@ mutates it. Three things were checked, and all three hold:
 That is also why `_tag_fonts()` is **not** cached (§2.3): a `QFont` is mutable and is exactly the
 kind of object that would break this rule.
 
+### 2.6 The icon defect, measured
+
+```
+$ python3 -m cola --repo /tmp/scratch
+qt.svg: Cannot open file '/tmp/scratch/plus.svg', because: No such file or directory
+```
+
+`plus.svg` **exists** — in `cola/icons/`. It is looked up in the wrong place:
+
+| call | renders? |
+|---|---|
+| `icons.from_name('plus.svg')` — what `filelist.py:252` does today | **No** |
+| `icons.icon('plus.svg')` — what every other call site does | **Yes** |
+
+It affects every code `diff_status_basename()` can return, not only `A`. With the fix, measured
+from a foreign working directory:
+
+| status | basename | renders |
+|---|---|---|
+| `A` | `plus.svg` | yes |
+| `D` | `circle-slash-red.svg` | yes |
+| `M`, `T` | `modified.svg` | yes |
+| `R`, `C` | `git-compare.svg` | yes |
+| unknown | `file-code.svg` (filename-derived) | yes |
+
+After the fix a full application start emits **zero** `qt.svg` warnings — measured by counting
+them over a 5-second run of the real entry point.
+
+**Why it went unnoticed:** `icons.install()` is only ever called from `cola/app.py`, so in the
+test suite no icon resolves at all and `QIcon.isNull()` is useless as an assertion — that is a
+documented gotcha in this repository. The two tests in Task 3 are the first that register the
+search path on purpose, and they put it back afterwards.
+
 ## 3. Non-goals
 
 - **No rewrite of the color math.** `_lane_colors`, `readable_chip_fill` and
@@ -208,6 +253,11 @@ kind of object that would break this rule.
   in key building than it saves.
 - **No change to the history reader, the graph builder or the config layer.** §2.3 has the numbers.
 - **No `cola` compatibility package** after the rename.
+- **No change to `icons.from_name()` itself.** Making it tolerate a bare basename would hide the
+  next occurrence of the same mistake; the docstring already states the contract and one call site
+  violated it.
+- **No audit of the other 66 icon assets.** Only the file-panel path is fixed, because only it is
+  broken: every other basename in `cola/icons.py` reaches Qt through `icons.icon()`.
 - **These stay exactly as they are** and are not part of "the important things":
   - the `cola` alias of the `git fanta` sub-command (`cola/main.py:102`) and its test
   - `icons.cola()` and the two `'icon': 'cola'` literals that resolve to it
@@ -237,6 +287,8 @@ kind of object that would break this rule.
 | **F11** | **`fanta` is two characters longer than `cola`.** One line crosses the 88-column limit after the sweep. `garden fmt` fixes it; `garden check/fmt` is what notices. | Measured: `test/widgets_main_history_test.py:483` |
 | **F12** | **`pytest.ini` sets `--doctest-modules`,** and the test command names the package directory. `pytest … cola test` collects nothing after the move and silently drops every doctest. The command becomes `pytest … fanta test`, in `garden.yaml` too. | `pytest.ini:3`; `garden.yaml:160` |
 | **F13** | **`python3 -m fanta` only works from a directory where the package is importable.** The smoke checks in this plan run from the repository root. | Measured: from another directory, `No module named fanta` |
+| **F15** | **`QIcon` resolves its file lazily and caches the failure.** An icon built before the `icons:` search path exists stays broken *after* the path is registered — measured: `pixmap(16, 16).isNull()` is still `True`. `icons.from_name` is memoized on top of that, so one early lookup poisons every later user of the same name. The tests in Task 3 therefore clear `icons.from_name.cache` before **and** after they run. | Measured with `QtCore.QDir.setSearchPaths('icons', [])`, then building the icon, then restoring the path |
+| **F16** | **`QIcon.isNull()` is not the check.** `QIcon('anything-at-all.svg')` is **not** null; only an icon built from an empty string is. The question "does this icon actually render" is `icon.pixmap(16, 16).isNull()`. | Measured; also stated in `references/gotchas.md` |
 | **F14** | **`git mv cola fanta` moves the package *into* `fanta/` when that directory already exists**, prints nothing and exits 0. A `fanta/` left over from an aborted attempt survives `git clean -fd`, because it holds only ignored `__pycache__` directories. | Measured: `git status` then showed `R cola/__init__.py -> fanta/cola/__init__.py` |
 
 ## 5. What already exists and is reused (do not rebuild)
@@ -311,8 +363,9 @@ The pass count after each task on the reference machine — your absolute number
 | 0 (baseline) | — | 794 | 4 |
 | 1 — style cache | +4 | 798 | 4 |
 | 2 — color caches | +4 | 802 | 4 |
-| 3 — the rename | 0 | 802 | 4 |
-| 4 — documentation | 0 | 802 | 4 |
+| 3 — file-status icons | +8 | 810 | 4 |
+| 4 — the rename | 0 | 810 | 4 |
+| 5 — documentation | 0 | 810 | 4 |
 
 ---
 
@@ -806,7 +859,166 @@ same (isValid, rgba) identity the style cache uses."
 
 ---
 
-## Task 3 — Rename the Python package from `cola` to `fanta`
+## Task 3 — Make the file-status icons appear
+
+**Goal:** the history's file panel shows an icon per row again, and the application starts without
+a single `qt.svg` warning.
+
+### Step 3.1 (RED) — Write the tests
+
+`test/widgets_history_filelist_test.py` already imports `icons`. Add one more. Anchor:
+
+```bash
+grep -n "^from cola import icons$" test/widgets_history_filelist_test.py
+```
+
+**Expected:** exactly one hit. Insert **directly below it**:
+
+```python
+from cola import qtcompat
+```
+
+Append to the **end** of `test/widgets_history_filelist_test.py`:
+
+```python
+def test_the_file_status_icon_resolves_through_the_icon_search_path(qapp):
+    """The reported defect: every status icon in the file panel was missing.
+
+    icons.from_name() wants an "icons:"-prefixed name; handed a bare basename
+    it asks Qt for a path relative to the process working directory, which is
+    the repository the user opened. This is the one test in the suite that
+    registers the icon search path, so it has to put it back afterwards - and
+    icons.from_name is memoized, so its cache has to go too.
+    """
+    icons.install(['default'])
+    icons.from_name.cache.clear()
+    try:
+        item = FileTreeWidgetItem('12\t0\tsrc/main.py')
+        item.set_status('A')
+
+        assert not item.icon(0).pixmap(16, 16).isNull()
+    finally:
+        qtcompat.set_search_paths('icons', [])
+        icons.from_name.cache.clear()
+
+
+@pytest.mark.parametrize('status', ('A', 'D', 'M', 'T', 'R', 'C', ''))
+def test_every_status_code_maps_to_an_asset_that_exists(qapp, status):
+    """A basename with no file behind it fails silently at paint time."""
+    icons.install(['default'])
+    icons.from_name.cache.clear()
+    try:
+        basename = icons.diff_status_basename(status, 'src/main.py')
+
+        assert not icons.icon(basename).pixmap(16, 16).isNull(), basename
+    finally:
+        qtcompat.set_search_paths('icons', [])
+        icons.from_name.cache.clear()
+```
+
+> **Both tests clear `icons.from_name.cache` on the way in and on the way out** (trap **F15**).
+> The memoized icon for a name that was looked up before the search path existed is permanently
+> broken, and leaving a *working* one behind would let a later test pass for the wrong reason.
+> `qtcompat.set_search_paths('icons', [])` restores the state every other test expects.
+>
+> **The assertion is `pixmap(16, 16).isNull()`, never `icon.isNull()`** (trap **F16**).
+
+**Run RED:**
+
+```bash
+QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q test/widgets_history_filelist_test.py -k "resolves_through_the_icon_search_path or maps_to_an_asset" 2>&1 | tail -6
+```
+
+**Expected:** `1 failed, 7 passed`, and in the captured stderr
+
+```
+qt.svg: Cannot open file '<repository root>/plus.svg', because: No such file or directory
+```
+
+The seven parametrisations of `test_every_status_code_maps_to_an_asset_that_exists` **pass
+already** — they check `icons.icon()`, which is the call the fix switches to, and they are there so
+a future basename with no asset behind it cannot slip in.
+
+### Step 3.2 (GREEN) — Use the prefixing helper
+
+**Anchor:**
+
+```bash
+grep -n "        self.setIcon(0, icons.from_name(basename))" cola/widgets/filelist.py
+```
+
+**Expected:** exactly one hit, in `FileTreeWidgetItem.set_status`. Replace that line with:
+
+```python
+        self.setIcon(0, icons.icon(basename))
+```
+
+That is the whole fix. `icons.icon(basename)` is defined as
+`from_name(name_from_basename(basename))`, i.e. exactly what the other call sites do.
+
+> **Do not "fix" `icons.from_name()` to accept a bare basename instead.** Its docstring states the
+> contract — an absolute filename or an `icons:` name — and every other caller honours it.
+> `qtutils.create_treeitem()` prefixes the name itself at `cola/qtutils.py:834`. Loosening the
+> helper would hide the next occurrence.
+
+### Verification
+
+```bash
+garden fmt
+QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q cola test 2>&1 | tail -8
+```
+
+**Expected:** 802 → **810 passed**, still exactly the four baseline failures.
+
+Then confirm the warnings are gone from a real start. This runs the actual entry point against a
+scratch repository for five seconds and counts the warnings:
+
+```bash
+QT_QPA_PLATFORM=offscreen timeout 40 python3 - 2>&1 <<'RUN' | grep -c "qt.svg"
+import sys
+sys.argv = ['git-fanta', '--repo', '.']
+from qtpy import QtCore, QtWidgets
+from cola import main
+QtCore.QTimer.singleShot(
+    0, lambda: QtCore.QTimer.singleShot(
+        5000, lambda: QtWidgets.QApplication.instance().quit()))
+try:
+    main.main()
+except SystemExit:
+    pass
+RUN
+```
+
+**Expected:** `0`. `grep -c` exits non-zero when it counts nothing, so a `0` with a non-zero exit
+status is the success case here.
+
+### Commit
+
+```bash
+git add -A && git commit -m "fix: show the file-status icons in the history file panel
+
+FileTreeWidgetItem.set_status() handed a bare basename to
+icons.from_name(), whose docstring asks for an absolute filename or an
+'icons:'-prefixed name. Without the prefix Qt resolves the name against
+the process working directory - the repository the user opened - so every
+status icon in the panel was invisible and every start printed
+
+  qt.svg: Cannot open file '<repo>/plus.svg', because: No such file ...
+
+It affected all six status codes and the filename-derived fallback, not
+just the added one. icons.icon() is the helper that prefixes the name,
+and it is what every other call site already uses.
+
+The two new tests are the first in this suite to register the icon search
+path on purpose. They clear the memoized icon cache before and after,
+because an icon built while no search path existed stays broken once one
+is registered - and they assert on pixmap(), because QIcon.isNull() is
+false for any non-empty name."
+```
+
+---
+
+## Task 4 — Rename the Python package from `cola` to `fanta`
 
 **Goal:** `import fanta` is how the code is called. One commit; the suite is red in the middle of
 this task and green at the end.
@@ -815,7 +1027,7 @@ this task and green at the end.
 > cola` sub-command alias, `icons.cola()`, the `cola.*` config-key fallback, `ColaApplication`, or
 > any comment. If you find yourself editing a docstring, you have gone too far.
 
-### Step 3.1 — Move the directory
+### Step 4.1 — Move the directory
 
 ```bash
 ls -d fanta 2>/dev/null && echo "STOP: fanta/ already exists"
@@ -825,7 +1037,7 @@ ls -d cola 2>/dev/null && echo "STOP: cola/ is still there"
 ```
 
 **Expected:** the first `ls` prints nothing, the three files exist, and the last `ls` prints
-nothing. From here until Step 3.6 the suite does not run — that is expected.
+nothing. From here until Step 4.6 the suite does not run — that is expected.
 
 > **`git mv` moves *into* an existing directory** (trap **F14**). If a previous attempt left a
 > `fanta/` behind — `git clean -fd` does **not** remove one that holds only ignored
@@ -834,7 +1046,7 @@ nothing. From here until Step 3.6 the suite does not run — that is expected.
 > `rm -rf fanta`, then start this task again. **Do not** reach for `git clean -x`; it deletes
 > `env3/` and anything else you have not committed.
 
-### Step 3.2 — Rewrite imports and module-path literals in every tracked `*.py`
+### Step 4.2 — Rewrite imports and module-path literals in every tracked `*.py`
 
 The sweep rewrites three things and nothing else: `from cola` / `from cola.`, `import cola` /
 `import cola.`, and a quoted `'cola.<module>'` where `<module>` is a real module or sub-package of
@@ -874,7 +1086,7 @@ describe the content of `test/fixtures/diff.txt`:
 
 Leave all three. `test/fixtures/diff.txt` is a captured diff and is **not** rewritten.
 
-### Step 3.3 — The three launchers without a `.py` extension
+### Step 4.3 — The three launchers without a `.py` extension
 
 Trap **F6** — `git ls-files '*.py'` does not match these:
 
@@ -889,7 +1101,7 @@ grep -n "fanta\." bin/git-fanta bin/git-dag bin/git-fanta-sequence-editor
 **Expected:** `from fanta.main import main`, `from fanta import dag` (twice) and
 `from fanta import sequenceeditor` — four lines in total.
 
-### Step 3.4 — The literals that are really a path, not prose
+### Step 4.4 — The literals that are really a path, not prose
 
 Trap **F7**. **Anchor:**
 
@@ -945,7 +1157,7 @@ with:
 Usage: python -m fanta
 ```
 
-### Step 3.5 — Packaging, build and installer files
+### Step 4.5 — Packaging, build and installer files
 
 None of these contain the product name `git-fanta` in the places being edited; only the package
 path changes.
@@ -1005,7 +1217,7 @@ Makefile:121:	$(RM) "$(DESTDIR)$(prefix)"/bin/cola
 That is an uninstall rule for a legacy launcher name and is left alone. `cola-app` in
 `garden.yaml` is a garden variable for the macOS bundle, not the package (§2.4).
 
-### Step 3.6 — The guard test's self-references
+### Step 4.6 — The guard test's self-references
 
 `test/rename_guard_test.py` describes the repository to itself (trap **F9**):
 
@@ -1040,7 +1252,7 @@ PY
 
 The script asserts each replacement is unique; if one fails, **stop and report**.
 
-### Step 3.7 — Format, then check what is left
+### Step 4.7 — Format, then check what is left
 
 ```bash
 garden fmt
@@ -1053,7 +1265,7 @@ measured after the sweep, for comparison:
 
 | file | hits | what they are |
 |---|---|---|
-| `fanta/resources.py` | 11 | prose, "a path relative to cola's …". The seven that named a *path* were fixed in Step 3.4 |
+| `fanta/resources.py` | 11 | prose, "a path relative to cola's …". The seven that named a *path* were fixed in Step 4.4 |
 | `test/widgets_dag_history_test.py` | 11 | sample paths inside the `commit_message_file_spans` test data |
 | `test/appearance_test.py` | 10 | `cola.*` git-config keys |
 | `fanta/gitcfg.py` + `test/gitcfg_test.py` | 11 | the `cola.*` config-key fallback and its tests |
@@ -1082,9 +1294,9 @@ for launcher in git-fanta git-dag git-fanta-sequence-editor; do
 done
 ```
 
-**Expected:** formatting clean; **802 passed** and the same four baseline failures; `python3 -m
+**Expected:** formatting clean; **810 passed** and the same four baseline failures; `python3 -m
 fanta --help` prints a usage line; each of the three launchers prints its own usage line. A
-`ModuleNotFoundError` from any launcher means Step 3.3 was skipped.
+`ModuleNotFoundError` from any launcher means Step 4.3 was skipped.
 
 > `pytest … cola test` now collects nothing from the package and silently drops every doctest
 > (trap **F12**). From here on the command is `pytest … fanta test`.
@@ -1117,11 +1329,11 @@ source code."
 
 ---
 
-## Task 4 — Write down what was decided
+## Task 5 — Write down what was decided
 
 > **Documentation only.** No production code, no tests.
 
-### Step 4.1 — `docs/plans/README.md`
+### Step 5.1 — `docs/plans/README.md`
 
 Add one row to the table, directly below the `2026-08-01-history-ui-improvements.md` row:
 
@@ -1129,9 +1341,9 @@ Add one row to the table, directly below the `2026-08-01-history-ui-improvements
 | [2026-08-01-paint-performance-and-fanta-module.md](2026-08-01-paint-performance-and-fanta-module.md) | completed | `cola-module/performance/plan` → *fill in the last commit* |
 ```
 
-Replace the placeholder with the short hash of the Task 3 commit (`git rev-parse --short HEAD`).
+Replace the placeholder with the short hash of the Task 4 commit (`git rev-parse --short HEAD`).
 
-### Step 4.2 — The frontmatter of this plan
+### Step 5.2 — The frontmatter of this plan
 
 Replace the frontmatter of `docs/plans/2026-08-01-paint-performance-and-fanta-module.md` —
 currently the three lines `---`, `status: open`, `---` — with:
@@ -1142,7 +1354,7 @@ status: completed
 completed_at: 2026-08-01
 plan_commit: <short hash of the commit that added this plan>
 implementation_branch: cola-module/performance/plan
-implementation_head: <short hash of the Task 3 commit>
+implementation_head: <short hash of the Task 4 commit>
 ci_run: not run (green locally)
 manual_verification: |
   - <what you actually looked at, or "not possible in a headless environment">
@@ -1152,7 +1364,7 @@ manual_verification: |
 `plan_commit` is found with
 `git log --oneline --diff-filter=A -- docs/plans/2026-08-01-paint-performance-and-fanta-module.md`.
 
-### Step 4.3 — `.claude/skills/project-brief/references/fork-history.md`
+### Step 5.3 — `.claude/skills/project-brief/references/fork-history.md`
 
 Anchor:
 
@@ -1197,10 +1409,17 @@ Plan: `docs/plans/2026-08-01-paint-performance-and-fanta-module.md`.
 - **`test/diffparse_test.py` still names the old package three times** because those lines describe
   `test/fixtures/diff.txt`, a captured diff. Rewriting them breaks the test; rewriting the fixture
   changes what the parser is tested against.
+- **`icons.from_name()` takes an `icons:` name, `icons.icon()` takes a basename.** The file panel
+  passed a bare basename to the first one, so Qt looked for `plus.svg` in the repository the user
+  had opened and every status icon was invisible. `icons.icon()` is the prefixing helper; every
+  other call site already used it or prefixed by hand.
+- **Two tests register the icon search path on purpose** and restore it, which is the exception to
+  "icons do not resolve in tests". They clear `icons.from_name.cache` at both ends, because a
+  memoized icon built before the path existed stays broken afterwards.
 
 ```
 
-### Step 4.4 — `.claude/skills/project-brief/references/gotchas.md`
+### Step 5.4 — `.claude/skills/project-brief/references/gotchas.md`
 
 Anchor:
 
@@ -1230,6 +1449,20 @@ grep -n "^\*\*The formatter is \`cercis\`, not black\*\*" .claude/skills/project
 **Expected:** exactly one hit. Insert **directly above it**:
 
 ```markdown
+**An icon built before `icons.install()` stays broken.** `QIcon` resolves its file lazily and
+caches the failure: registering the `icons:` search path afterwards does not repair it, and
+`icons.from_name` is memoized on top, so one early lookup poisons every later user of that name.
+A test that registers the search path must clear `icons.from_name.cache` on the way in and out.
+
+**`QIcon.isNull()` answers the wrong question.** `QIcon('does-not-exist.svg')` is *not* null — only
+an icon built from an empty string is. "Does this icon render" is `icon.pixmap(16, 16).isNull()`.
+
+**`icons.from_name()` wants an `icons:`-prefixed name; `icons.icon()` wants a bare basename.**
+Handing a basename to `from_name()` makes Qt resolve it against the process working directory,
+which is the repository the user opened — the icon silently disappears and `qt.svg` prints one
+warning per name. `qtutils.create_treeitem()` prefixes by hand with `icons.name_from_basename()`;
+everything else goes through `icons.icon()`.
+
 **The three launchers in `bin/` are Python without a `.py` extension.** `git ls-files '*.py'` does
 not match `bin/git-fanta`, `bin/git-dag` or `bin/git-fanta-sequence-editor`; any sweep over the
 sources has to name them. `bin/_activate_fanta.py` does have the extension.
@@ -1245,7 +1478,7 @@ Guard with `ls -d <target>` first.
 
 ```
 
-### Step 4.5 — `.claude/skills/project-brief/SKILL.md`
+### Step 5.5 — `.claude/skills/project-brief/SKILL.md`
 
 The brief still says the package is called `cola`. Anchor:
 
@@ -1292,9 +1525,11 @@ than a cache with invalidation, why the key carries isValid() next to
 rgba(), what was profiled and deliberately left alone, and where the line
 was drawn for the package rename.
 
-Adds three gotchas that cost time here: the invalid-versus-black rgba()
-collision, the three launchers in bin/ that are Python without a .py
-extension, and git mv moving a directory into an existing target."
+Adds the gotchas that cost time here: the invalid-versus-black rgba()
+collision, the lazily-resolved QIcon that stays broken once it has failed,
+QIcon.isNull() answering the wrong question, from_name() versus icon(),
+the three launchers in bin/ that are Python without a .py extension, and
+git mv moving a directory into an existing target."
 ```
 
 ---
@@ -1307,7 +1542,7 @@ QT_QPA_PLATFORM=offscreen python3 -B -m pytest -p no:ruff -q fanta test 2>&1 | t
 garden check/fmt
 ```
 
-Four commits, the four `test/git_test.py` failures and nothing else, formatting clean.
+Five commits, the four `test/git_test.py` failures and nothing else, formatting clean.
 
 **Do not push and do not open a pull request.** Report what was done, what the final test output
 was, and anything you had to deviate from.
@@ -1325,3 +1560,7 @@ was, and anything you had to deviate from.
 6. `git fanta cola` still starts the application — the sub-command alias was not renamed.
 7. The toolbar still shows its icon. If it is missing, `icons.cola()` or one of the two
    `'icon': 'cola'` entries was renamed after all.
+8. Select a commit in the history. **Every row of the file panel carries a status icon** — a plus
+   for an added file, a slashed circle for a deleted one, and so on. Before this change they were
+   all blank.
+9. The terminal the application was started from prints **no** `qt.svg` lines at all.
