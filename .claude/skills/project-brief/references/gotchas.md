@@ -88,13 +88,28 @@ scrollbar.
 on the history's nested splitters. Visibility guards written against a child keep working when the
 parent becomes the thing that is toggled.
 
+**`QFontMetrics` has no `font()` accessor.** Measured under PyQt5: `hasattr(metrics, 'font')` is
+`False`. Anything that needs a *variant* of the font a metrics object describes must be handed the
+`QFont` as well. A bold font changes the advance and **not** the line height, so mixed-weight
+labels in one row still line up.
+
+**`QHeaderView` stretches the last section by default.** `header().stretchLastSection()` is `True`
+on a fresh `QTreeWidget`. Giving a middle section `QHeaderView.Stretch` does not switch that off,
+and the two then fight over the slack.
+
+**A modal dialog reached from a test hangs pytest forever** — no error, no timeout, just a run
+that never finishes. Anything in the production path that can call `exec_()` must be patched out
+in every test that can reach it.
+
 **A `QSyntaxHighlighter`'s formats are invisible to `QTextCursor.charFormat()`.** They live as
 additional formats in the layout; read them with `block.layout().formats()`.
 
 
 **The inline graph's chip color names are misleading.** `chip_head` paints **local** branches
-(`heads/…`), `chip_other` is the fallback that **remote** branches land in, and `chip_remote`
-paints `HEAD` and tags. See `cola/widgets/dag.py` where the brush is chosen.
+(`heads/…`), `chip_other` is the fallback that **remote** branches land in, `chip_tag` paints
+tags, and `chip_remote` paints nothing but the `HEAD` chip. See `cola/widgets/dag.py` where the
+brush is chosen. There are **four** chip colors; `_distinct_chip_backgrounds()` and
+`readable_chip_fills()` both have to keep producing four distinct ones.
 
 **Contrast ratio is luminance-only, so it cannot assert that two colors look different.** Forcing
 several fills to the same contrast floor against the same background necessarily puts them at the

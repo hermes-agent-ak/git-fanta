@@ -270,6 +270,51 @@ Right-clicking a history row whose branch has commits the current branch lacks o
 - **The Branches dock was left alone.** It still merges immediately without a dialog. Changing it
   is a separate decision.
 
+## 10. Five history-view improvements
+
+Plan: `docs/plans/2026-08-01-history-ui-improvements.md`.
+
+A Hash column, an ISO date, roomier chips, a branch chooser for an ambiguous double-click, and
+tags that are actually visible.
+
+**Decisions that later work must not undo:**
+
+- **The Hash column is last and is not part of the saved state.** `column_widths` was already
+  truncated to two entries in `CommitHistoryWidget.export_state()`, so the new column needed no
+  migration and no state assertion changed. `setStretchLastSection(False)` is required: Qt
+  stretches the last section by default and would otherwise let the hash swallow the window.
+- **The date is formatted by git, never parsed.** `Defaults.logdate` is
+  `format:%Y-%m-%d %H:%M`; `get_date_for_current_time()` already routed a `format:` value through
+  `DateFormat.is_custom()`, so the STAGE and WORKTREE rows matched without a change. Carrying a
+  second date field on 1000 `Commit` objects was the alternative and was rejected.
+- **`sizeHint` reserved `fontMetrics.height() + 4`, which is exactly the padded chip and no
+  margin at all.** Measured over eight font sizes: from about 11 pt the chip was as tall as its
+  own row, and `paint()` clips to `option.rect`, so the corners were cut off. `ROW_V_MARGIN = 2`
+  is the fix, and it is a no-op at 8–9 pt where the `ROW_HEIGHT` floor already won.
+- **Row height is asserted as a property, not a number.** The two tests that pinned it to `26`
+  were only true on the machine that wrote `26` down; one of them was already failing on a 12 pt
+  desktop font. They now assert that the row is at least as tall as the chip plus its margin.
+- **The padding lives in two places that must agree**: `_draw_labels` draws the box,
+  `_label_hit_test` recomputes it, and two tests compare the two.
+- **`SelectBranchDialog` offers local branches only.** Mixing in the remote refs would make one OK
+  button mean *switch branch* on some rows and *create a tracking branch* on others. The
+  remote-only and multi-remote double-click paths are unchanged.
+- **Four existing dialogs were checked before adding one** — `GitCheckoutBranchDialog`,
+  `SelectRemoteBranch`, `SelectCommits` and `Switcher`. §2.4 of the plan records why each is the
+  wrong shape.
+- **A tag is marked three ways**: `chip_tag`, bold text and the `⚑` glyph. One signal is not
+  enough — on a greyscale palette the four fills are forced apart by lightness alone and hue stops
+  carrying meaning.
+- **`chip_tag` is the palette highlight rotated half a turn** with a saturation and a value floor.
+  Measured over thirteen palettes: four distinct fills on both row backgrounds, worst contrast
+  2.50.
+- **The bold weight needs the `QFont`, not just the metrics.** `QFontMetrics` does not expose the
+  font it was built from, so `_draw_labels`, `_labels_width` and `_label_hit_test` all take an
+  optional trailing `font`. The chip *height* keeps using the plain metrics — a bold font changes
+  the advance, not the line height.
+- **A new parameter on `_draw_labels` goes last.** One test calls it with nine positional
+  arguments.
+
 ## Where the fork's tests live
 
 - `test/widgets_dag_history_test.py` — `CommitHistoryWidget`, `GitDAG`, state round-trips,

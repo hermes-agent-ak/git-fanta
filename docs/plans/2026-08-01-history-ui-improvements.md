@@ -1,5 +1,12 @@
 ---
-status: open
+status: completed
+completed_at: 2026-08-01
+plan_commit: e4049221
+implementation_branch: tree-ui/ui-improve/minimax-M3
+implementation_head: 282eb7ff
+ci_run: not run (green locally)
+manual_verification: |
+  - not possible in a headless environment
 ---
 
 # Five history-view improvements: hash column, ISO date, chip padding, branch chooser, prominent tags
