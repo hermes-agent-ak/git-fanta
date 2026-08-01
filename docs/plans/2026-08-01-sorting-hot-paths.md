@@ -1,5 +1,12 @@
 ---
-status: open
+status: completed
+completed_at: 2026-08-01
+plan_commit: a478a19b
+implementation_branch: cola-module/performance/minimax-M3
+implementation_head: 4763969c
+ci_run: not run (green locally)
+manual_verification: |
+  - not possible in a headless environment
 ---
 
 # Two sorts that should not be sorts

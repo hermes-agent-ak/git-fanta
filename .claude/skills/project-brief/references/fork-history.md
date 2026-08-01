@@ -357,6 +357,32 @@ Plan: `docs/plans/2026-08-01-paint-performance-and-fanta-module.md`.
   "icons do not resolve in tests". They clear `icons.from_name.cache` at both ends, because a
   memoized icon built before the path existed stays broken afterwards.
 
+## 12. The two sorts that should not have been sorts
+
+Plan: `docs/plans/2026-08-01-sorting-hot-paths.md`.
+
+All 47 sorting call sites in the package were inventoried and measured; two were worth changing,
+and in both cases the fix was to stop sorting rather than to sort differently.
+
+**Decisions that later work must not undo:**
+
+- **`_color_contrast()` compares, it does not sort.** Do not "tidy" it back into a `sorted()` or a
+  `max()`/`min()` pair: 365 ns, 226 ns and 109 ns respectively for the same answer. Every colour
+  search on the paint path reaches it, so it is the hottest function in the program on a cache
+  miss — but since section 11 landed, a miss is only the first paint and a theme change. Do not
+  quote its saving as a per-repaint number.
+- **The rebase row lookup keys on `id()`.** `RebaseTreeWidgetItem.__hash__` returns a string, so
+  the item cannot be a dict key. `__eq__` is identity, which is what makes `id()` equivalent to
+  what `list.index()` found.
+- **Timsort stays everywhere else.** A hand-written quicksort measured 16x slower and a merge sort
+  24x slower than `sorted()`, and `heapq` 2.5x slower, on 2000 elements.
+- **`completion.filter_matches()` was measured and left alone.** Folding its second `lower()` pass
+  into a decorate-sort-undecorate loop is 0.87x — slower, because the list comprehension it
+  replaces runs in C.
+- **`test/sequenceeditor_move_test.py` is the first coverage `fanta/sequenceeditor.py` ever had.**
+  Its nineteen tests are characterization tests: they described the behaviour before the change
+  and were not touched by it.
+
 ## Where the fork's tests live
 
 - `test/widgets_dag_history_test.py` — `CommitHistoryWidget`, `GitDAG`, state round-trips,

@@ -19,8 +19,8 @@ They are reference material, not a task list.
 | [2026-07-31-history-bugfixes-1.md](2026-07-31-history-bugfixes-1.md) | completed | `tree-ui/bugfixes-1/minimax-M3` → `02958207` |
 | [2026-08-01-history-merge-action.md](2026-08-01-history-merge-action.md) | completed | `tree-ui/merge-action/minimax-M3` → `95df2ee5` |
 | [2026-08-01-history-ui-improvements.md](2026-08-01-history-ui-improvements.md) | completed | `tree-ui/ui-improve/minimax-M3` → `282eb7ff` |
-| [2026-08-01-sorting-hot-paths.md](2026-08-01-sorting-hot-paths.md) | **open** | — |
-| [2026-08-01-paint-performance-and-fanta-module.md](2026-08-01-paint-performance-and-fanta-module.md) | **open** | — |
+| [2026-08-01-sorting-hot-paths.md](2026-08-01-sorting-hot-paths.md) | completed | `cola-module/performance/minimax-M3` → `4763969c` |
+| [2026-08-01-paint-performance-and-fanta-module.md](2026-08-01-paint-performance-and-fanta-module.md) | completed | `cola-module/performance/plan` → `f27dd5bc` |
 
 ## When a plan is finished
 

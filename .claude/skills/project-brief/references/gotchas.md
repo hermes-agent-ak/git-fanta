@@ -241,6 +241,23 @@ pytest capture that is an error, not a `False`. Monkeypatch it in every test tha
 **`cmds.do()` swallows exceptions** into `Interaction.critical` (`cola/cmds.py:3591`). A broken
 command does not fail a test by itself; assert on the git state or the model instead.
 
+## Sorting
+
+**Do not replace `sorted()` with a hand-written algorithm.** Measured on 2000 floats: `sorted()`
+0.28 ms, `heapq` 0.69 ms, textbook quicksort 4.57 ms, textbook merge sort 6.62 ms. Timsort runs
+inside one C call and exploits the runs that git output already has; every comparison in a Python
+implementation is a bytecode round trip. The wins are in *not* sorting — a comparison instead of
+`sorted()` on two values, `min()` instead of `sorted(x)[0]`, one index pass instead of
+`list.index()` per lookup.
+
+**`RebaseTreeWidgetItem` is unhashable.** `__hash__` returns `self.oid`, a string, so `hash(item)`
+raises `TypeError` and the item cannot be a dict key or a set member. `__eq__` is `self is other`,
+so anything that needs a lookup table keys on `id(item)` — that finds the same row `list.index()`
+would.
+
+**`fanta/polib.py` is vendored third-party code** (MIT, `extras/polib/LICENSE`). It holds six of
+the package's forty-seven sorting call sites and none of them are ours to change.
+
 ## Toolchain
 
 **An icon built before `icons.install()` stays broken.** `QIcon` resolves its file lazily and
