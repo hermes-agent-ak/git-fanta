@@ -8,8 +8,10 @@ description: Orientation for the git-fanta repository — what it is, how the co
 A fork of git-cola, the Qt desktop GUI for Git, renamed to **git-fanta**. Everything
 user-facing carries the fork name: the `git-fanta` executable, the `git fanta` subcommand,
 `fanta.*` git-config keys, `GIT_FANTA_*` environment variables and `~/.config/git-fanta`.
-The Python package is still `cola` (`import cola`, `cola/`) and `[tool.setuptools] packages`
-names it — that is deliberate, do not "fix" it. References to the upstream project
+The Python package is `fanta` (`import fanta`, `fanta/`); it was renamed from `cola` on
+2026-08-01, see `docs/plans/2026-08-01-paint-performance-and-fanta-module.md`. A handful of `cola`
+spellings survive on purpose — the `git fanta cola` sub-command alias, `icons.cola()`, the
+`cola.*` config fallback and `ColaApplication` — do not "fix" those.
 (github.com/git-cola/git-cola, `brew install git-cola`, `CHANGES.rst`, the remotes in
 `garden.yaml`) are also deliberate and must stay. See
 `docs/plans/2026-07-30-rename-to-git-fanta.md`.
@@ -27,24 +29,24 @@ until you see the reasoning.
 
 | Path | What lives there |
 |---|---|
-| `cola/widgets/` | All Qt views. `main.py` = MainView (the main window), `dag.py` = commit history + graph + the standalone DAG window, `diff.py`, `status.py`, `filelist.py`, `standard.py` (base classes + state mixins), `defs.py` (spacing constants), `qtutils`-adjacent helpers |
-| `cola/models/` | Non-Qt data models: `main.py` (MainModel), `dag.py` (Commit/RepoReader), `graph.py` (the single graph engine, `build_graph()`), `prefs.py`, `selection.py` |
-| `cola/` (top level) | `git.py` (Git process wrapper), `gitcmds.py` (git commands + output parsing), `cmds.py` (undoable commands), `qtutils.py` (widget factories, `Task`/`RunTask`, state helpers), `icons.py` (the **only** file naming icon assets), `hotkeys.py`, `app.py` (`ApplicationContext`), `settings.py`, `i18n.py` |
-| `cola/icons/` | The SVG assets. Check here before assuming an icon exists |
+| `fanta/widgets/` | All Qt views. `main.py` = MainView (the main window), `dag.py` = commit history + graph + the standalone DAG window, `diff.py`, `status.py`, `filelist.py`, `standard.py` (base classes + state mixins), `defs.py` (spacing constants), `qtutils`-adjacent helpers |
+| `fanta/models/` | Non-Qt data models: `main.py` (MainModel), `dag.py` (Commit/RepoReader), `graph.py` (the single graph engine, `build_graph()`), `prefs.py`, `selection.py` |
+| `fanta/` (top level) | `git.py` (Git process wrapper), `gitcmds.py` (git commands + output parsing), `cmds.py` (undoable commands), `qtutils.py` (widget factories, `Task`/`RunTask`, state helpers), `icons.py` (the **only** file naming icon assets), `hotkeys.py`, `app.py` (`ApplicationContext`), `settings.py`, `i18n.py` |
+| `fanta/icons/` | The SVG assets. Check here before assuming an icon exists |
 | `test/` | 41 `*_test.py` files, flat, plus `helper.py`. No `conftest.py` — fixtures are defined per file or imported from `helper` |
 | `docs/plans/` | Implementation plans (see Workflow below) |
 | `bin/` | Launchers: `git-fanta`, `git-dag`, `git-fanta-sequence-editor` |
 
 ## Architecture in five sentences
 
-`ApplicationContext` (`cola/app.py:807`) is the dependency container passed to nearly everything:
+`ApplicationContext` (`fanta/app.py:807`) is the dependency container passed to nearly everything:
 `context.git`, `.cfg`, `.model`, `.settings`, `.selection`, `.runtask`, `.view`, `.notifier`.
 Widgets take `context` as their first constructor argument and read what they need from it.
 Mutating operations go through `cmds.do(cmds.SomeCommand, context, ...)` rather than direct git
 calls, so they can log and notify; read-only queries go through `gitcmds`. Widgets talk to each
 other with Qt signals, frequently `type=Qt.QueuedConnection`, and long work runs on
 `context.runtask.start(qtutils.Task(...))` or a `QThread`. UI state persists through
-`export_state()` / `apply_state()` pairs defined by the mixins in `cola/widgets/standard.py`,
+`export_state()` / `apply_state()` pairs defined by the mixins in `fanta/widgets/standard.py`,
 with each composite widget nesting its children's state under its own key.
 
 ## Conventions that will bite you
@@ -55,13 +57,13 @@ with each composite widget nesting its children's state under its own key.
   `isort --force-single-line-imports --py=39 --no-lines-before=STDLIB`. One import per line,
   alphabetical. Run `garden fmt`; do not hand-format.
 - **Target is Python 3.9.** `pyupgrade --py39-plus` is a CI gate. No 3.10+ syntax.
-- **User-visible strings go through `N_()`** from `cola.i18n`. Catalogs live in `cola/i18n/`.
-- **`pytest.ini` sets `--doctest-modules`,** and `garden test` collects `cola` *and* `test`.
+- **User-visible strings go through `N_()`** from `fanta.i18n`. Catalogs live in `fanta/i18n/`.
+- **`pytest.ini` sets `--doctest-modules`,** and `garden test` collects `fanta` *and* `test`.
   A `>>>` in any docstring becomes a test. Don't put example REPL output in docstrings casually.
 - **`pytest-ruff` runs as a plugin** via `pytest-enabler`. Focused local runs usually pass
   `-p no:ruff` (CI does too) and lint separately.
 - **Icons are looked up by basename** through `icons.name_from_basename()` → `icons.from_name()`,
-  and the `icons:` search path is only registered by `icons.install()` in `cola/app.py`. In tests
+  and the `icons:` search path is only registered by `icons.install()` in `fanta/app.py`. In tests
   no icon resolves, so assert on data, never on `QIcon.isNull()`.
 
 ## Running things
@@ -72,7 +74,7 @@ garden run/qt6             # same, forcing QT_API=PyQt6
 garden test                # offscreen pytest over cola/ and test/
 garden fmt                 # cercis + isort, in place
 garden check/fmt           # the same, --check only
-garden check/mypy          # mypy --config-file pyproject.toml bin cola
+garden check/mypy          # mypy --config-file pyproject.toml bin fanta
 garden check/pyupgrade     # py39 idiom check
 garden doc/html            # Sphinx build
 ```

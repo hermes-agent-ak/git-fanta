@@ -111,6 +111,14 @@ tags, and `chip_remote` paints nothing but the `HEAD` chip. See `cola/widgets/da
 brush is chosen. There are **four** chip colors; `_distinct_chip_backgrounds()` and
 `readable_chip_fills()` both have to keep producing four distinct ones.
 
+**An invalid `QColor` and opaque black report the same `rgba()`** — both `0xff000000`. Measured.
+Anything that keys on a color has to carry `isValid()` as well, because `_opaque_color()`
+synthesizes mid-grey for the invalid one and leaves black alone.
+
+**`inline_graph_style()` is memoized on the palette.** It returns a shared frozen instance, so an
+equal palette hands back the *same object* — a test that asserts `is not` between two calls is
+asserting the old, uncached behavior. A different palette is a different key; nothing invalidates.
+
 **Contrast ratio is luminance-only, so it cannot assert that two colors look different.** Forcing
 several fills to the same contrast floor against the same background necessarily puts them at the
 same luminance, which reads as "contrast 1.0" between them while they stay clearly different
@@ -234,6 +242,33 @@ pytest capture that is an error, not a `False`. Monkeypatch it in every test tha
 command does not fail a test by itself; assert on the git state or the model instead.
 
 ## Toolchain
+
+**An icon built before `icons.install()` stays broken.** `QIcon` resolves its file lazily and
+caches the failure: registering the `icons:` search path afterwards does not repair it, and
+`icons.from_name` is memoized on top, so one early lookup poisons every later user of that name.
+A test that registers the search path must clear `icons.from_name.cache` on the way in and out.
+
+**`QIcon.isNull()` answers the wrong question.** `QIcon('does-not-exist.svg')` is *not* null — only
+an icon built from an empty string is. "Does this icon render" is `icon.pixmap(16, 16).isNull()`.
+
+**`icons.from_name()` wants an `icons:`-prefixed name; `icons.icon()` wants a bare basename.**
+Handing a basename to `from_name()` makes Qt resolve it against the process working directory,
+which is the repository the user opened — the icon silently disappears and `qt.svg` prints one
+warning per name. `qtutils.create_treeitem()` prefixes by hand with `icons.name_from_basename()`;
+everything else goes through `icons.icon()`.
+
+**The three launchers in `bin/` are Python without a `.py` extension.** `git ls-files '*.py'` does
+not match `bin/git-fanta`, `bin/git-dag` or `bin/git-fanta-sequence-editor`; any sweep over the
+sources has to name them. `bin/_activate_fanta.py` does have the extension.
+
+**`fanta/resources.py` derives the installation prefix from the package directory name.** Two
+`endswith(os.path.join(..., 'fanta'))` checks distinguish a Unix release tree, a Windows release
+tree and the source tree. They are code, not comments, and a rename that misses them silently
+computes the wrong prefix for an installed release.
+
+**`git mv <dir> <existing-dir>` moves *into* it and exits 0.** A leftover target directory holding
+only ignored files survives `git clean -fd`, so a retried rename can silently nest the package.
+Guard with `ls -d <target>` first.
 
 **The formatter is `cercis`, not black** (`[tool.cercis]` in `pyproject.toml`, plus the
 pre-commit hook). Line length 88, `function-definition-extra-indent = false`.

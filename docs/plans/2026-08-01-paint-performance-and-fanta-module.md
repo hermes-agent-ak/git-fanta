@@ -1,5 +1,12 @@
 ---
-status: open
+status: completed
+completed_at: 2026-08-01
+plan_commit: 19501943
+implementation_branch: cola-module/performance/plan
+implementation_head: f27dd5bc
+ci_run: not run (green locally)
+manual_verification: |
+  - not possible in a headless environment
 ---
 
 # The history repaints 26x faster, the file icons come back, and the package becomes `fanta`

@@ -315,6 +315,48 @@ tags that are actually visible.
 - **A new parameter on `_draw_labels` goes last.** One test calls it with nine positional
   arguments.
 
+## 11. The paint path stopped rebuilding its colors, and the package became `fanta`
+
+Plan: `docs/plans/2026-08-01-paint-performance-and-fanta-module.md`.
+
+**Decisions that later work must not undo:**
+
+- **`inline_graph_style()` is memoized on the palette, not cached with invalidation.** It cost
+  5.1 ms and ran once per painted row, which put the history at about six frames per second.
+  Keying on the five palette roles keeps the original "no invalidation logic" property: a theme
+  change is a different key. Measured afterwards: 15 us per call, and a 30-row repaint went from
+  156 ms to 6.0 ms.
+- **The cache key is `(color.isValid(), color.rgba())`, and both halves are load-bearing.** An
+  invalid `QColor` and opaque black report the same `rgba()`, and `_opaque_color()` treats them
+  differently.
+- **`InlineGraphStyle` being frozen is what makes sharing one instance safe.** Do not make it
+  mutable.
+- **The color math was not touched.** `_lane_colors`, `_distinct_chip_backgrounds` and
+  `readable_chip_fill` keep their algorithms; only the entry points memoize. After that the
+  profile is Qt's own `drawText` and `drawRoundedRect`.
+- **`_prepare_labels`, `_row_labels` and `_tag_fonts` are deliberately not cached** — measured at
+  3.5-12 us, together under 0.5 ms of a 6 ms repaint. `_tag_fonts` additionally returns a
+  **mutable** `QFont`; caching that would break the "never mutate what you were handed" invariant
+  the other three caches rely on.
+- **The reader and the graph builder were profiled and left alone**: 64 ms for 1000 commits, 45 ms
+  of which is the `git log` subprocess, on a worker thread.
+- **The package rename is shallow on purpose.** Imports, module-path literals, packaging, build
+  files, the three extensionless launchers in `bin/`, and the two `resources.py` literals that
+  decide the installation prefix. Everything that merely *reads* like the old name stays: the
+  `git fanta cola` alias, `icons.cola()` and the `'icon': 'cola'` entries that reach it through
+  `getattr`, the `cola.*` config fallback, `ColaApplication`, `~/.cola`, and the `.po` source
+  references.
+- **`test/diffparse_test.py` still names the old package three times** because those lines describe
+  `test/fixtures/diff.txt`, a captured diff. Rewriting them breaks the test; rewriting the fixture
+  changes what the parser is tested against.
+- **`icons.from_name()` takes an `icons:` name, `icons.icon()` takes a basename.** The file panel
+  passed a bare basename to the first one, so Qt looked for `plus.svg` in the repository the user
+  had opened and every status icon was invisible. `icons.icon()` is the prefixing helper; every
+  other call site already used it or prefixed by hand.
+- **Two tests register the icon search path on purpose** and restore it, which is the exception to
+  "icons do not resolve in tests". They clear `icons.from_name.cache` at both ends, because a
+  memoized icon built before the path existed stays broken afterwards.
+
 ## Where the fork's tests live
 
 - `test/widgets_dag_history_test.py` — `CommitHistoryWidget`, `GitDAG`, state round-trips,
