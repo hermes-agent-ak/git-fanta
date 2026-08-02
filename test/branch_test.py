@@ -1,7 +1,7 @@
 """Tests related to the branches widget"""
 from unittest.mock import Mock
 
-from cola.widgets import branch
+from fanta.widgets import branch
 
 
 def test_create_tree_entries():

@@ -1,8 +1,8 @@
 """Tests the cola.utils module."""
 import os
 
-from cola import core
-from cola import utils
+from fanta import core
+from fanta import utils
 
 
 def test_basename():

@@ -1,0 +1,54 @@
+from __future__ import annotations
+import argparse
+import sys
+from typing import Any
+
+from . import app
+from .widgets.dag import git_dag
+
+
+def main(argv: list[str] | None = None) -> Any:
+    """Run git-fanta-dag"""
+    app.initialize()
+    args = parse_args(argv=argv)
+    return args.func(args)
+
+
+def shortcut_launch() -> Any:
+    """Run git-fanta-dag from a Windows shortcut"""
+    return main(argv=['--prompt'])
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse command-line arguments"""
+    if argv is None:
+        argv = sys.argv[1:]
+    parser = argparse.ArgumentParser()
+    parser.set_defaults(func=cmd_dag)
+
+    app.add_common_arguments(parser)
+    parser.add_argument(
+        '-c',
+        '--count',
+        '--max-count',
+        metavar='<count>',
+        type=int,
+        default=None,
+        help='number of commits to display',
+    )
+    parser.add_argument(
+        'args', nargs=argparse.REMAINDER, metavar='<args>', help='git log arguments'
+    )
+    args, rest = parser.parse_known_args(args=argv)
+    if rest:
+        # splice unknown arguments to the beginning ~
+        # these are forwarded to git-log(1).
+        args.args[:0] = rest
+    return args
+
+
+def cmd_dag(args: argparse.Namespace | None) -> int:
+    """Run git-fanta-dag via the `git fanta dag` sub-command"""
+    context = app.application_init(args, app_name='Git Fanta DAG', setup_repo=True)
+    view = git_dag(context, args=args, show=False)
+    return app.application_start(context, view)

@@ -1,5 +1,5 @@
 """Test Startup Dialog (git fanta --prompt) Context Menu and related classes"""
-from cola.widgets import startup
+from fanta.widgets import startup
 
 from .helper import app_context
 
@@ -89,9 +89,9 @@ def test_get_with_list_mode(app_context):
     assert not actual.isEditable()
 
 
-def test_legacy_default_repo_key_is_still_honored(app_context):
-    """Ein vor der Umbenennung gesetztes cola.defaultrepo wirkt weiter."""
-    app_context.cfg.set_repo('cola.defaultrepo', '/tmp/legacy-repo')
+def test_a_cola_default_repo_key_is_not_honored(app_context):
+    """A repository the other application remembered is not ours to open."""
+    app_context.cfg.set_repo('cola.defaultrepo', '/tmp/their-repo')
     app_context.cfg.reset()
 
-    assert app_context.cfg.get('fanta.defaultrepo') == '/tmp/legacy-repo'
+    assert app_context.cfg.get('fanta.defaultrepo', default='') == ''

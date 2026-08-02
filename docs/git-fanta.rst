@@ -95,8 +95,9 @@ Configure settings. ``git fanta config`` is an entry point for the
 dag
 ---
 
-Start the ``git dag`` Git history browser. ``git fanta dag`` is an entry point for the
-``View > DAG...`` main menu action and can also be launched as ``git dag`` command.
+Start the Git Fanta DAG history browser. ``git fanta dag`` is an entry point for the
+``View > DAG...`` main menu action and can also be launched as the standalone
+``git-fanta-dag`` command.
 
 diff
 ----
@@ -824,6 +825,11 @@ CONFIGURATION VARIABLES
 =======================
 
 These variables can be set using `git config` or from the settings.
+
+Git Fanta reads and writes the ``fanta.`` prefix and nothing else. It installs
+alongside git-cola, so a ``cola.`` key in ``~/.gitconfig`` or ``.git/config``
+configures that application and has no effect here. Copy the settings you want
+to keep under the ``fanta.`` prefix.
 
 fanta.aspell.enabled
 -------------------

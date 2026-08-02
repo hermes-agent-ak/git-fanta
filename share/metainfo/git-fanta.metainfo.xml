@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>git-fanta.desktop</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-2.0</project_license>
+  <name>Git Fanta</name>
+  <developer_name>David Aguilar</developer_name>
+  <summary>Sleek and powerful Git GUI</summary>
+  <description>
+    <p>
+      git-fanta is a simple, powerful, and feature-rich GUI for git that provides an easy way to interact with Git repositories.
+    </p>
+  </description>
+  <launchable type="desktop-id">git-fanta.desktop</launchable>
+  <url type="homepage">https://github.com/hermes-agent-ak/git-fanta</url>
+  <url type="bugtracker">https://github.com/hermes-agent-ak/git-fanta/issues</url>
+  <url type="vcs-browser">https://github.com/hermes-agent-ak/git-fanta</url>
+  <releases>
+    <release version="1.0.1" date="2026-08-02" />
+    <release version="1.0.0" date="2026-07-31" />
+  </releases>
+  <content_rating type="oars-1.1" />
+</component>

@@ -3,7 +3,7 @@ import sys
 import types
 from unittest.mock import MagicMock
 
-from cola import app
+from fanta import app
 from qtpy import QtCore
 
 

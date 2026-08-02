@@ -1,6 +1,6 @@
 """Test Quick Switcher"""
-from cola import icons
-from cola.widgets import switcher
+from fanta import icons
+from fanta.widgets import switcher
 
 
 def test_switcher_item_with_only_key():

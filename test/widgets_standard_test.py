@@ -1,6 +1,16 @@
+import sys
+
 """Tests for cola.widgets.standard helpers."""
-from cola.widgets.standard import _strip_maximized_geometry_flag
+import pytest
+
+from fanta import qtutils
+from fanta.widgets import defs
+from fanta.widgets.standard import MessageBox
+from fanta.widgets.standard import _strip_maximized_geometry_flag
 from qtpy import QtCore
+from qtpy import QtWidgets
+
+from .helper import app_context
 
 # Real saveGeometry() blob captured from a maximised git-fanta main window on
 # macOS 15 (recorded from ~/.config/git-fanta/settings). The byte at offset 44
@@ -14,6 +24,17 @@ _NORMAL_BLOB_B64 = b'AdnQywADAAAAAAHgAAAAGQAAB38AAAQ1AAAB4AAAADUAAAd/' b'AAAENQA
 def _maximized_byte(blob):
     """Return the byte at the well-known maximized-flag offset."""
     return bytes(blob)[44]
+
+
+@pytest.fixture(scope='module')
+def qapp():
+    """Provide a QApplication for offscreen widget tests."""
+    instance = QtWidgets.QApplication.instance()
+    if instance is None:
+        instance = QtWidgets.QApplication(
+            sys.argv[:1] if sys.argv else ['git-fanta-test']
+        )
+    yield instance
 
 
 def test_strip_clears_the_maximized_flag():
@@ -77,3 +98,87 @@ def test_strip_treats_any_non_zero_byte_as_maximized():
 
     assert was_maximized is True
     assert _maximized_byte(blob_out) == 0
+
+
+def test_message_box_is_not_wider_than_the_fixed_legacy_width(qapp, app_context):
+    """A one-line question must not open at the full 720px dialog width."""
+    box = MessageBox(
+        parent=None,
+        title='Create Remote?',
+        text='Create a remote branch too?',
+        info='',
+        ok_text='Create',
+    )
+
+    box.set_initial_size()
+
+    assert box.width() < defs.dialog_w
+    box.deleteLater()
+
+
+def test_plain_confirm_box_uses_a_tighter_target_size(qapp, app_context):
+    """A short question with no logo and no details pane stays small."""
+    box = MessageBox(parent=None, title='t', text='short', ok_text='OK')
+
+    box.set_initial_size()
+
+    assert box.width() == defs.confirm_w
+    assert box.height() == defs.confirm_h
+    box.deleteLater()
+
+
+def test_message_box_is_wide_enough_for_its_text(qapp, app_context):
+    """Shrinking must not cut the content off.
+
+    Width is capped at defs.dialog_w so a very wide content wraps instead of
+    pushing the box off-screen. Height must still reach the minimumSizeHint.
+    """
+    box = MessageBox(
+        parent=None, title='Long', text='x' * 200, info='y' * 200, ok_text='OK'
+    )
+
+    box.set_initial_size()
+
+    assert box.width() <= defs.dialog_w
+    assert box.width() >= defs.dialog_w // 2
+    assert box.height() >= box.minimumSizeHint().height()
+    box.deleteLater()
+
+
+def test_message_box_with_details_keeps_room_for_them(qapp, app_context):
+    """A box showing a details pane still needs the taller layout."""
+    small = MessageBox(parent=None, title='t', text='short', ok_text='OK')
+    large = MessageBox(
+        parent=None,
+        title='t',
+        text='short',
+        details='line\n' * 40,
+        ok_text='OK',
+        expand_details=True,
+    )
+
+    small.set_initial_size()
+    large.set_initial_size()
+
+    assert large.height() > small.height()
+    small.deleteLater()
+    large.deleteLater()
+
+
+def test_message_box_never_exceeds_the_screen(qapp, app_context):
+    """Clamping is what keeps a huge details blob from opening off-screen."""
+    desktop_width, desktop_height = qtutils.desktop_size()
+    box = MessageBox(
+        parent=None,
+        title='t',
+        text='short',
+        details='line\n' * 5000,
+        ok_text='OK',
+        expand_details=True,
+    )
+
+    box.set_initial_size()
+
+    assert box.width() <= desktop_width
+    assert box.height() <= desktop_height
+    box.deleteLater()

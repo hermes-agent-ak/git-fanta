@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from cola.models.graph import GraphResult
-from cola.models.graph import GraphRowColor
-from cola.models.graph import build_graph
+from fanta.models.graph import GraphResult
+from fanta.models.graph import GraphRowColor
+from fanta.models.graph import build_graph
 
 
 def assert_colors(result: GraphResult, expected: list[GraphRowColor]) -> None:

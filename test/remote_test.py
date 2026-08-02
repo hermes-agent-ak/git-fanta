@@ -1,7 +1,7 @@
 from unittest.mock import Mock
 from unittest.mock import patch
 
-from cola.widgets import remote
+from fanta.widgets import remote
 
 
 class FakeCheckbox:
@@ -71,7 +71,7 @@ def test_push_apply_state_does_not_restore_upstream_when_not_remembered():
 def test_upstream_checkbox_toggled_disabling_clears_remember_state():
     dialog = DummyPushDialog()
     dialog.remember_upstream_checkbox_state = True
-    with patch('cola.widgets.remote.Interaction.confirm') as confirm:
+    with patch('fanta.widgets.remote.Interaction.confirm') as confirm:
         remote.Push.upstream_checkbox_toggled(dialog, False)
     assert not dialog.remember_upstream_checkbox_state
     confirm.assert_not_called()
@@ -80,8 +80,8 @@ def test_upstream_checkbox_toggled_disabling_clears_remember_state():
 def test_upstream_checkbox_toggled_enabling_prompts_to_remember():
     dialog = DummyPushDialog()
     with (
-        patch('cola.widgets.remote.icons.question', return_value=None),
-        patch('cola.widgets.remote.Interaction.confirm', return_value=True) as confirm,
+        patch('fanta.widgets.remote.icons.question', return_value=None),
+        patch('fanta.widgets.remote.Interaction.confirm', return_value=True) as confirm,
     ):
         remote.Push.upstream_checkbox_toggled(dialog, True)
     assert dialog.remember_upstream_checkbox_state
@@ -91,9 +91,9 @@ def test_upstream_checkbox_toggled_enabling_prompts_to_remember():
 def test_upstream_checkbox_toggled_enabling_keeps_one_time_behavior():
     dialog = DummyPushDialog()
     with (
-        patch('cola.widgets.remote.icons.question', return_value=None),
+        patch('fanta.widgets.remote.icons.question', return_value=None),
         patch(
-            'cola.widgets.remote.Interaction.confirm',
+            'fanta.widgets.remote.Interaction.confirm',
             return_value=False,
         ) as confirm,
     ):
@@ -105,6 +105,6 @@ def test_upstream_checkbox_toggled_enabling_keeps_one_time_behavior():
 def test_upstream_checkbox_toggled_enabling_skips_prompt_when_remembered():
     dialog = DummyPushDialog()
     dialog.remember_upstream_checkbox_state = True
-    with patch('cola.widgets.remote.Interaction.confirm') as confirm:
+    with patch('fanta.widgets.remote.Interaction.confirm') as confirm:
         remote.Push.upstream_checkbox_toggled(dialog, True)
     confirm.assert_not_called()

@@ -6,10 +6,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cola.widgets.diff import CommitFileDiffWindow
-from cola.widgets.diff import DiffInfoTask
-from cola.widgets.diff import DiffRangeTask
-from cola.widgets.diff import show_commit_file_diff
+from fanta.widgets.diff import CommitFileDiffWindow
+from fanta.widgets.diff import DiffInfoTask
+from fanta.widgets.diff import DiffRangeTask
+from fanta.widgets.diff import show_commit_file_diff
 from qtpy import QtCore
 from qtpy import QtTest
 from qtpy import QtWidgets
@@ -106,17 +106,19 @@ def test_set_commit_file_survives_the_debounce(qapp, app_context, managed_qobjec
     assert _last_task(app_context).filename == 'src/a.py'
 
 
-def test_set_commit_file_uses_a_range_for_multiple_commits(
+def test_set_commit_file_diffs_one_commit_for_multiple_commits(
     qapp, app_context, managed_qobject
 ):
+    """A range hides a file whose change cancels out inside it."""
     window = _window(app_context, managed_qobject)
+    app_context.git.rev_list = lambda *args, **kwargs: (0, 'a' * 40 + '\n', '')
     first = _fake_commit('a' * 40)
     last = _fake_commit('b' * 40)
 
     window.set_commit_file([first, last], 'src/a.py')
 
     task = _last_task(app_context)
-    assert isinstance(task, DiffRangeTask)
+    assert isinstance(task, DiffInfoTask)
     assert task.filename == 'src/a.py'
 
 
@@ -209,3 +211,85 @@ def test_show_loads_the_new_file_into_the_reused_window(
     )
 
     assert _last_task(app_context).filename == 'src/b.py'
+
+
+def test_double_click_shows_the_commit_that_touched_the_file(
+    qapp, app_context, managed_qobject
+):
+    """The newest selected commit that changed the file supplies the diff."""
+    window = _window(app_context, managed_qobject)
+    older = _fake_commit('a' * 40, summary='older')
+    newer = _fake_commit('b' * 40, summary='newer')
+    asked = []
+    app_context.git.rev_list = lambda *args, **kwargs: (
+        asked.append(args) or (0, 'a' * 40 + '\n', '')
+    )
+    shown = []
+    window.diffwidget.set_diff_oid = lambda oid, **kwargs: shown.append((oid, kwargs))
+
+    window.set_commit_file([older, newer], 'src/a.py')
+
+    assert shown == [('a' * 40, {'filename': 'src/a.py'})]
+    assert window.diffwidget.oid == 'a' * 40
+
+
+def test_double_click_never_asks_for_a_range(qapp, app_context, managed_qobject):
+    """A range diff is what hid the file in the first place - it must not run."""
+    window = _window(app_context, managed_qobject)
+    app_context.git.rev_list = lambda *args, **kwargs: (0, 'a' * 40 + '\n', '')
+    ranges = []
+    window.diffwidget.set_diff_range = lambda *args, **kwargs: ranges.append(args)
+    window.diffwidget.set_diff_oid = lambda oid, **kwargs: None
+
+    window.set_commit_file([_fake_commit('a' * 40), _fake_commit('b' * 40)], 'src/a.py')
+
+    assert ranges == []
+    assert window.diffwidget.oid_start is None
+    assert window.diffwidget.oid_end is None
+
+
+def test_double_click_titles_the_window_with_the_touching_commit(
+    qapp, app_context, managed_qobject
+):
+    """The header must name the commit whose diff is on screen, not the newest."""
+    window = _window(app_context, managed_qobject)
+    older = _fake_commit('a' * 40, summary='older')
+    newer = _fake_commit('b' * 40, summary='newer')
+    app_context.git.rev_list = lambda *args, **kwargs: (0, 'a' * 40 + '\n', '')
+    window.diffwidget.set_diff_oid = lambda oid, **kwargs: None
+
+    window.set_commit_file([older, newer], 'src/a.py')
+
+    assert ('a' * 40)[:12] in window.windowTitle()
+
+
+def test_double_click_falls_back_to_the_newest_commit(
+    qapp, app_context, managed_qobject
+):
+    """No answer from git means the previous behaviour: use the newest commit."""
+    window = _window(app_context, managed_qobject)
+    app_context.git.rev_list = lambda *args, **kwargs: (0, '', '')
+    shown = []
+    window.diffwidget.set_diff_oid = lambda oid, **kwargs: shown.append(oid)
+
+    window.set_commit_file([_fake_commit('a' * 40), _fake_commit('b' * 40)], 'src/a.py')
+
+    assert shown == ['b' * 40]
+
+
+def test_double_click_on_a_single_commit_asks_no_question(
+    qapp, app_context, managed_qobject
+):
+    """Characterization: one commit needs no lookup, it is the answer."""
+    window = _window(app_context, managed_qobject)
+    asked = []
+    app_context.git.rev_list = lambda *args, **kwargs: (
+        asked.append(args) or (0, '', '')
+    )
+    shown = []
+    window.diffwidget.set_diff_oid = lambda oid, **kwargs: shown.append(oid)
+
+    window.set_commit_file([_fake_commit('a' * 40)], 'src/a.py')
+
+    assert asked == []
+    assert shown == ['a' * 40]

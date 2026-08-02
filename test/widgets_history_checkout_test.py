@@ -3,15 +3,19 @@
 
 import subprocess
 import sys
+from unittest.mock import Mock
 
 import pytest
 
-from cola import guicmds
-from cola.interaction import Interaction
-from cola.models import dag
-from cola.widgets.dag import CommitTreeWidget
-from cola.widgets.dag import CommitTreeWidgetItem
+from fanta import cmds
+from fanta.interaction import Interaction
+from fanta.models import dag
+from fanta.widgets import dag as dagwidget
+from fanta.widgets import defs
+from fanta.widgets.dag import CommitTreeWidget
+from fanta.widgets.dag import CommitTreeWidgetItem
 from qtpy import QtCore
+from qtpy import QtGui
 from qtpy import QtTest
 from qtpy import QtWidgets
 
@@ -46,8 +50,13 @@ def managed_qobject(qapp):
     QtTest.QTest.qWait(5)
     qapp.processEvents()
     for obj in reversed(objects):
+        if isinstance(obj, QtWidgets.QWidget):
+            obj.close()
+    qapp.processEvents()
+    for obj in reversed(objects):
         obj.deleteLater()
     QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+    qapp.processEvents()
 
 
 def _git(*args):
@@ -218,30 +227,47 @@ def test_detached_head_on_a_plain_commit_does_not_ask_again(
     assert checkouts == []
 
 
-def test_several_branches_at_one_commit_open_the_checkout_dialog(
+def test_several_branches_at_one_commit_offer_exactly_those_branches(
     qapp, checkout_context, managed_qobject, monkeypatch
 ):
-    """Mehrdeutig heisst: der vorhandene Auswahldialog entscheidet."""
+    """Ambiguous means: ask, and offer only what is actually on that commit."""
     _base, topic_oid = _repo_with_topic(checkout_context)
     _git('branch', 'alpha', 'topic')
     checkout_context.model.update_status()
-    chosen = []
+    offered = []
     monkeypatch.setattr(
-        guicmds,
-        'checkout_branch',
-        lambda context, default=None: chosen.append(default),
-    )
-    checkouts = []
-    monkeypatch.setattr(
-        checkout_context.git, 'checkout', lambda *a, **kw: checkouts.append((a, kw))
+        dagwidget,
+        'select_branch_at_commit',
+        lambda branches, parent=None: offered.append(list(branches)) or 'alpha',
     )
     confirmed = _never_confirm(monkeypatch)
     tree = _tree(checkout_context, managed_qobject)
 
     tree.checkout_commit(_fake_commit(topic_oid, branches=['alpha', 'topic']))
 
-    assert chosen == ['alpha']
-    assert checkouts == []
+    assert offered == [['alpha', 'topic']]
+    assert _git('rev-parse', '--abbrev-ref', 'HEAD') == 'alpha'
+    assert confirmed == []
+
+
+def test_cancelling_the_branch_choice_checks_nothing_out(
+    qapp, checkout_context, managed_qobject, monkeypatch
+):
+    """A cancelled dialog must leave HEAD exactly where it was."""
+    _base, topic_oid = _repo_with_topic(checkout_context)
+    _git('branch', 'alpha', 'topic')
+    checkout_context.model.update_status()
+    head_before = _git('rev-parse', 'HEAD')
+    monkeypatch.setattr(
+        dagwidget, 'select_branch_at_commit', lambda branches, parent=None: ''
+    )
+    confirmed = _never_confirm(monkeypatch)
+    tree = _tree(checkout_context, managed_qobject)
+
+    tree.checkout_commit(_fake_commit(topic_oid, branches=['alpha', 'topic']))
+
+    assert _git('rev-parse', 'HEAD') == head_before
+    assert _git('rev-parse', '--abbrev-ref', 'HEAD') == 'main'
     assert confirmed == []
 
 
@@ -311,3 +337,277 @@ def test_double_click_on_a_row_without_a_commit_is_ignored(
     qapp.processEvents()
 
     assert confirmed == []
+
+
+def test_remote_only_commit_creates_a_tracking_branch(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """A commit that only exists on a remote becomes a local branch."""
+    commit = _fake_commit('a' * 40, tags=['remotes/origin/feature'])
+    tree = _tree(app_context, managed_qobject)
+    recorded = []
+    monkeypatch.setattr(
+        cmds,
+        'do',
+        lambda cls, context, *args, **kwargs: recorded.append((cls, args, kwargs)),
+    )
+
+    tree.checkout_commit(commit)
+
+    assert recorded == [(
+        cmds.Checkout,
+        (['-b', 'feature', '--track', 'origin/feature'],),
+        {'checkout_branch': True},
+    )]
+
+
+def test_remote_only_commit_keeps_a_slashed_branch_name(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """Only the remote name is stripped, not the rest of the branch name."""
+    commit = _fake_commit('a' * 40, tags=['remotes/origin/feat/nested'])
+    tree = _tree(app_context, managed_qobject)
+    recorded = []
+    monkeypatch.setattr(
+        cmds, 'do', lambda cls, context, *args, **kwargs: recorded.append(args)
+    )
+
+    tree.checkout_commit(commit)
+
+    assert recorded == [(['-b', 'feat/nested', '--track', 'origin/feat/nested'],)]
+
+
+def test_several_remote_branches_do_not_guess(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """Two remotes carrying the same commit is ambiguous - do not pick one."""
+    commit = _fake_commit(
+        'a' * 40, tags=['remotes/origin/feature', 'remotes/fork/feature']
+    )
+    tree = _tree(app_context, managed_qobject)
+    recorded = []
+    monkeypatch.setattr(
+        cmds, 'do', lambda cls, context, *args, **kwargs: recorded.append(cls)
+    )
+    monkeypatch.setattr(dagwidget, '_confirm_detached_checkout', lambda *a: False)
+
+    tree.checkout_commit(commit)
+
+    assert recorded == []
+
+
+def test_a_local_branch_still_wins_over_a_remote_one(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """Characterization: an existing local branch is checked out by name."""
+    commit = _fake_commit(
+        'a' * 40, branches=['feature'], tags=['remotes/origin/feature']
+    )
+    tree = _tree(app_context, managed_qobject)
+    recorded = []
+    monkeypatch.setattr(
+        cmds, 'do', lambda cls, context, *args, **kwargs: recorded.append((cls, args))
+    )
+
+    tree.checkout_commit(commit)
+
+    assert recorded == [(cmds.CheckoutBranch, ('feature',))]
+
+
+def _tree_with_actions(context, managed_qobject):
+    """A commit tree that owns its menu actions, the way GitDAG builds them."""
+    tree = _tree(context, managed_qobject)
+    tree.menu_actions = dagwidget.viewer_actions(tree, tree)
+    return tree
+
+
+def _context_menu_event():
+    position = QtCore.QPoint(-1, -1)
+    return QtGui.QContextMenuEvent(QtGui.QContextMenuEvent.Mouse, position, position)
+
+
+def _row_under_cursor(tree, monkeypatch, commit):
+    """Make itemAt() report a row, the way a real right-click does.
+
+    update_menu_actions() re-reads the row under the cursor and overwrites
+    tree.clicked, so presetting that attribute would be thrown away (trap F13).
+    """
+    item = Mock()
+    item.commit = commit
+    monkeypatch.setattr(tree, 'itemAt', lambda _pos: item)
+
+
+def test_merge_action_is_offered_for_a_branch_with_new_commits(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """The reported feature: a branch ahead of the current one can be merged."""
+    tree = _tree_with_actions(app_context, managed_qobject)
+    monkeypatch.setattr(app_context.model, 'currentbranch', 'main')
+    monkeypatch.setattr(dagwidget.gitcmds, 'can_merge', lambda _context, _ref: True)
+    _row_under_cursor(tree, monkeypatch, _fake_commit('a' * 40, branches=['feature']))
+
+    tree.update_menu_actions(_context_menu_event())
+
+    action = tree.menu_actions['merge_branch']
+    assert action.isEnabled()
+    assert action.text() == 'Merge "feature" into "main"'
+
+
+def test_merge_action_is_disabled_when_there_is_nothing_to_merge(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """A branch already contained in the current one offers nothing."""
+    tree = _tree_with_actions(app_context, managed_qobject)
+    monkeypatch.setattr(app_context.model, 'currentbranch', 'main')
+    monkeypatch.setattr(dagwidget.gitcmds, 'can_merge', lambda _context, _ref: False)
+    _row_under_cursor(tree, monkeypatch, _fake_commit('a' * 40, branches=['feature']))
+
+    tree.update_menu_actions(_context_menu_event())
+
+    action = tree.menu_actions['merge_branch']
+    assert not action.isEnabled()
+    assert action.text() == 'Merge into Current Branch'
+
+
+def test_merge_action_asks_git_only_when_a_ref_exists(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """A click that misses a row must not run git (trap F4)."""
+    tree = _tree_with_actions(app_context, managed_qobject)
+    asked = []
+    monkeypatch.setattr(
+        dagwidget.gitcmds, 'can_merge', lambda _c, ref: asked.append(ref) or True
+    )
+    monkeypatch.setattr(tree, 'itemAt', lambda _pos: None)
+
+    tree.update_menu_actions(_context_menu_event())
+
+    assert asked == []
+    assert not tree.menu_actions['merge_branch'].isEnabled()
+
+
+def test_merge_action_opens_the_dialog_on_that_branch(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    """Choosing the action reaches local_merge with the branch preselected."""
+    tree = _tree_with_actions(app_context, managed_qobject)
+    monkeypatch.setattr(app_context.model, 'currentbranch', 'main')
+    monkeypatch.setattr(dagwidget.gitcmds, 'can_merge', lambda _context, _ref: True)
+    opened = []
+    monkeypatch.setattr(
+        dagwidget.merge, 'local_merge', lambda context, ref=None: opened.append(ref)
+    )
+    tree.clicked = _fake_commit('a' * 40, branches=['feature'])
+
+    tree.merge_branch()
+
+    assert opened == ['feature']
+
+
+def test_merge_action_does_nothing_without_a_candidate(
+    qapp, app_context, managed_qobject, monkeypatch
+):
+    opened = []
+    tree = _tree_with_actions(app_context, managed_qobject)
+    monkeypatch.setattr(
+        dagwidget.merge, 'local_merge', lambda context, ref=None: opened.append(ref)
+    )
+    tree.clicked = None
+
+    tree.merge_branch()
+
+    assert opened == []
+
+
+def _branch_dialog(managed_qobject, branches):
+    """Build the dialog without ever entering its event loop (trap F2)."""
+    return managed_qobject(dagwidget.SelectBranchDialog(branches))
+
+
+def test_the_branch_dialog_lists_exactly_the_branches_it_was_given(
+    qapp, managed_qobject
+):
+    """No completer, no other refs: the row already said which branches count."""
+    dialog = _branch_dialog(managed_qobject, ['alpha', 'topic'])
+
+    shown = [
+        dialog.branch_list.item(row).text() for row in range(dialog.branch_list.count())
+    ]
+
+    assert shown == ['alpha', 'topic']
+    assert dialog.value() == 'alpha'
+    assert dialog.checkout_button.isEnabled()
+
+
+def test_the_branch_dialog_returns_the_selected_branch(qapp, managed_qobject):
+    dialog = _branch_dialog(managed_qobject, ['alpha', 'topic'])
+
+    dialog.branch_list.setCurrentRow(1)
+
+    assert dialog.value() == 'topic'
+
+
+def test_the_branch_dialog_cannot_be_accepted_without_a_selection(
+    qapp, managed_qobject
+):
+    dialog = _branch_dialog(managed_qobject, ['alpha', 'topic'])
+
+    dialog.branch_list.clearSelection()
+
+    assert dialog.value() == ''
+    assert not dialog.checkout_button.isEnabled()
+
+
+def test_an_empty_branch_list_opens_no_dialog_at_all(qapp, monkeypatch):
+    """A window with nothing to offer must never appear."""
+    built = []
+
+    def fail(*args, **kwargs):
+        built.append(args)
+        raise AssertionError('the dialog must not be constructed')
+
+    monkeypatch.setattr(dagwidget, 'SelectBranchDialog', fail)
+
+    assert dagwidget.select_branch_at_commit([]) == ''
+    assert built == []
+
+
+def test_the_branch_dialog_sizes_itself_to_fit_its_branches(qapp, managed_qobject):
+    """The default must follow the branches, not the parent window."""
+    dialog = _branch_dialog(managed_qobject, ['main'])
+
+    metrics = dialog.branch_list.fontMetrics()
+    text_width = metrics.horizontalAdvance('main')
+    item_height = dialog.branch_list.sizeHintForRow(0)
+    # Width: text + branch-list padding + 2 px slack on each side.
+    expected_width = text_width + 2 * defs.button_spacing + 32
+    # Height: label + 1 item + buttons + outer margin.
+    expected_height = (
+        dialog.label.sizeHint().height()
+        + item_height
+        + dialog.checkout_button.sizeHint().height()
+        + 3 * defs.margin
+    )
+
+    assert dialog.width() < 420, dialog.width()
+    assert dialog.width() >= expected_width, (dialog.width(), expected_width)
+    assert dialog.height() < 280, dialog.height()
+    assert dialog.height() >= expected_height, (dialog.height(), expected_height)
+
+
+def test_the_branch_dialog_grows_with_more_branches(qapp, managed_qobject):
+    """Adding branches must grow the row that holds them."""
+    small = _branch_dialog(managed_qobject, ['a'])
+    tall = _branch_dialog(managed_qobject, ['a'] * 8)
+
+    assert tall.height() > small.height()
+    assert tall.height() >= small.height() + 7 * tall.branch_list.sizeHintForRow(0)
+
+
+def test_the_branch_dialog_sizes_for_the_longest_branch_name(qapp, managed_qobject):
+    """The widest branch name decides the width."""
+    dialog = _branch_dialog(managed_qobject, ['main', 'a-very-long-branch-name'])
+
+    metrics = dialog.branch_list.fontMetrics()
+    expected_min = metrics.horizontalAdvance('a-very-long-branch-name') + 32
+    assert dialog.width() >= expected_min, (dialog.width(), expected_min)

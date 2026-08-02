@@ -3,14 +3,14 @@ import os
 import pathlib
 from unittest.mock import patch
 
-from cola import git
-from cola.git import STDOUT
+from fanta import git
+from fanta.git import STDOUT
 
 # 16k+1 bytes to exhaust any output buffers.
 BUFFER_SIZE = (16 * 1024) + 1
 
 
-@patch('cola.git.is_git_dir')
+@patch('fanta.git.is_git_dir')
 def test_find_git_dir_None(is_git_dir):
     paths = git.find_git_directory(None)
 
@@ -20,7 +20,7 @@ def test_find_git_dir_None(is_git_dir):
     assert paths.worktree is None
 
 
-@patch('cola.git.is_git_dir')
+@patch('fanta.git.is_git_dir')
 def test_find_git_dir_empty_string(is_git_dir):
     paths = git.find_git_directory('')
 
@@ -30,7 +30,7 @@ def test_find_git_dir_empty_string(is_git_dir):
     assert paths.worktree is None
 
 
-@patch('cola.git.is_git_dir')
+@patch('fanta.git.is_git_dir')
 def test_find_git_dir_never_found(is_git_dir):
     is_git_dir.return_value = False
 
@@ -56,7 +56,7 @@ def test_find_git_dir_never_found(is_git_dir):
     ])
 
 
-@patch('cola.git.is_git_dir')
+@patch('fanta.git.is_git_dir')
 def test_find_git_dir_found_right_away(is_git_dir):
     git_dir = str(pathlib.Path('/seems/to/exist/.git').resolve())
     worktree = str(pathlib.Path('/seems/to/exist').resolve())
@@ -70,7 +70,7 @@ def test_find_git_dir_found_right_away(is_git_dir):
     assert worktree == paths.worktree
 
 
-@patch('cola.git.is_git_dir')
+@patch('fanta.git.is_git_dir')
 def test_find_git_does_discovery(is_git_dir):
     git_dir = str(pathlib.Path('/the/root/.git').resolve())
     worktree = str(pathlib.Path('/the/root').resolve())
@@ -83,9 +83,9 @@ def test_find_git_does_discovery(is_git_dir):
     assert worktree == paths.worktree
 
 
-@patch('cola.git.read_git_file')
-@patch('cola.git.is_git_file')
-@patch('cola.git.is_git_dir')
+@patch('fanta.git.read_git_file')
+@patch('fanta.git.is_git_file')
+@patch('fanta.git.is_git_dir')
 def test_find_git_honors_git_files(is_git_dir, is_git_file, read_git_file):
     git_file = str(pathlib.Path('/the/root/.git').resolve())
     worktree = str(pathlib.Path('/the/root').resolve())
@@ -115,8 +115,8 @@ def test_find_git_honors_git_files(is_git_dir, is_git_file, read_git_file):
     read_git_file.assert_called_once_with(git_file)
 
 
-@patch('cola.core.getenv')
-@patch('cola.git.is_git_dir')
+@patch('fanta.core.getenv')
+@patch('fanta.git.is_git_dir')
 def test_find_git_honors_ceiling_dirs(is_git_dir, getenv):
     git_dir = str(pathlib.Path('/ceiling/.git').resolve())
     ceiling = os.pathsep.join(
@@ -145,9 +145,9 @@ def test_find_git_honors_ceiling_dirs(is_git_dir, getenv):
     ])
 
 
-@patch('cola.core.islink')
-@patch('cola.core.isdir')
-@patch('cola.core.isfile')
+@patch('fanta.core.islink')
+@patch('fanta.core.isdir')
+@patch('fanta.core.isfile')
 def test_is_git_dir_finds_linked_repository(isfile, isdir, islink):
     dirs = {
         str(pathlib.Path(directory).resolve())
@@ -178,8 +178,8 @@ def test_is_git_dir_finds_linked_repository(isfile, isdir, islink):
     assert git.is_git_dir(str(pathlib.Path('/foo/.git').resolve()))
 
 
-@patch('cola.core.getenv')
-@patch('cola.git.is_git_dir')
+@patch('fanta.core.getenv')
+@patch('fanta.git.is_git_dir')
 def test_find_git_worktree_from_GIT_DIR(is_git_dir, getenv):
     git_dir = str(pathlib.Path('/repo/.git').resolve())
     worktree = str(pathlib.Path('/repo').resolve())
@@ -193,7 +193,7 @@ def test_find_git_worktree_from_GIT_DIR(is_git_dir, getenv):
     assert worktree == paths.worktree
 
 
-@patch('cola.git.is_git_dir')
+@patch('fanta.git.is_git_dir')
 def test_finds_no_worktree_from_bare_repo(is_git_dir):
     git_dir = str(pathlib.Path('/repos/bare.git').resolve())
     worktree = None
@@ -206,8 +206,8 @@ def test_finds_no_worktree_from_bare_repo(is_git_dir):
     assert worktree == paths.worktree
 
 
-@patch('cola.core.getenv')
-@patch('cola.git.is_git_dir')
+@patch('fanta.core.getenv')
+@patch('fanta.git.is_git_dir')
 def test_find_git_directory_uses_GIT_WORK_TREE(is_git_dir, getenv):
     git_dir = str(pathlib.Path('/repo/worktree/.git').resolve())
     worktree = str(pathlib.Path('/repo/worktree').resolve())
@@ -231,8 +231,8 @@ def test_find_git_directory_uses_GIT_WORK_TREE(is_git_dir, getenv):
     assert worktree == paths.worktree
 
 
-@patch('cola.core.getenv')
-@patch('cola.git.is_git_dir')
+@patch('fanta.core.getenv')
+@patch('fanta.git.is_git_dir')
 def test_uses_cwd_for_worktree_with_GIT_DIR(is_git_dir, getenv):
     git_dir = str(pathlib.Path('/repo/.yadm/repo.git').resolve())
     worktree = str(pathlib.Path('/repo').resolve())

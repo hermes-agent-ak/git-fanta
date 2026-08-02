@@ -94,16 +94,15 @@ Plan: `docs/plans/2026-07-30-rename-to-git-fanta.md`. Implemented across `11e043
 **Decisions that later work must not undo:**
 
 - **Nothing that points at the upstream project was rewritten.** `CHANGES.rst`, the ~40
-  `github.com/git-cola/...` issue links in code comments, the remotes in `garden.yaml`, and
-  `brew install git-cola` in the macOS CI job all refer to a real, still-existing project.
-  `test/rename_guard_test.py` enforces both directions: no stray old product name, and the
-  allow-listed upstream references still present.
+  `github.com/git-cola/...` issue links in code comments and the remotes in `garden.yaml` all
+  refer to a real, still-existing project. `test/rename_guard_test.py` enforces both directions:
+  no stray old product name, and the allow-listed upstream references still present.
 - **Every user-facing rename has a backwards fallback**, so a pre-rename setup keeps working:
-  `gitcfg._key_candidates()` probes `fanta.*` then `cola.*` (`cola/gitcfg.py:253`),
-  `compat.getenv_with_legacy()` does the same for the env vars (`cola/compat.py:101`),
-  `gitcmds.prepare_commit_message_hook()` still honours a `cola-prepare-commit-msg` hook, and
-  `resources.migrate_config_home()` (`cola/resources.py:236`) copies (git-fanta was renamed from git-cola) `~/.config/git-cola` over
-  once on first run.
+  `gitcfg._key_candidates()` probes `fanta.*` then `cola.*` (`fanta/gitcfg.py:253`),
+  `compat.getenv_with_legacy()` does the same for the env vars (`fanta/compat.py:101`), and
+  `gitcmds.prepare_commit_message_hook()` still honours a `cola-prepare-commit-msg` hook.
+  The config-directory copy that used to sit alongside them was removed in work package 13,
+  because this fork installs alongside git-cola rather than replacing it.
 - **`git fanta cola` still works.** The sub-command was renamed with an argparse alias
   (`cola/main.py:102`), so old scripts and shell history do not break.
 - **The `.po` source references still say `cola/`,** because the package name did not change.
@@ -228,6 +227,261 @@ anything.
 - **Binary files keep `-`.** `merge_numstat_rows()` refuses to invent a number for them, and a
   path that is binary in any one commit stays binary in the merged row.
 
+## 8. Bug fixes after the multi-select work
+
+Plan: `docs/plans/2026-07-31-history-bugfixes-1.md`.
+
+Four unrelated defects found by hand-testing the history view.
+
+**Decisions that later work must not undo:**
+
+- **The file diff window never diffs a range.** It asks `gitcmds.commit_touching_path()` which of
+  the selected commits last changed the path and diffs that single commit. A range renders empty
+  whenever the change cancels out inside it or the oldest selection is the root commit, which is
+  exactly what the union-based file list makes easy to hit.
+- **Chip fills are nudged, not redesigned.** `readable_chip_fill()` only moves lightness, only
+  when the fill fails a 2.5 contrast floor against the row it is painted on. Re-deriving the
+  chips from the row background was measured and is worse; a 3.0 floor flattens all three.
+- **A remote-only commit is checked out explicitly** with `-b <name> --track <remote>/<name>`.
+  Never with plain `git checkout <name>`.
+- **`MessageBox` sizes from `sizeHint()`**, floored at half `defs.dialog_w` so buttons stay
+  readable and capped at `defs.dialog_w` so nothing grows.
+
+## 9. Merge from the history context menu
+
+Plan: `docs/plans/2026-08-01-history-merge-action.md`.
+
+Right-clicking a history row whose branch has commits the current branch lacks offers
+`Merge "<branch>" into "<current>"`, opening the standard merge dialog with that branch chosen.
+
+**Decisions that later work must not undo:**
+
+- **"Mergeable" is `git rev-list --count HEAD..<ref> > 0`,** not
+  `git merge-base --is-ancestor`. The latter reports a diverged branch as unmergeable, which is
+  wrong: a diverged branch is the ordinary merge case.
+- **A ref that does not resolve is a "no", not an error.** git exits 128 there and the output is
+  empty, so the status is checked and the text compared rather than parsed with `int()`.
+- **One deterministic candidate per row.** Local branch first, then remote. Every ref at a commit
+  merges identically, so the choice only decides the wording — but it must not vary.
+- **Preselection sets the radio, the list selection and the field together.** The field alone was
+  what the dialog did before, and it loses to the first click on the revision list. The field is
+  written last, after the list item is selected, because selecting an item writes it back.
+- **The Branches dock was left alone.** It still merges immediately without a dialog. Changing it
+  is a separate decision.
+
+## 10. Five history-view improvements
+
+Plan: `docs/plans/2026-08-01-history-ui-improvements.md`.
+
+A Hash column, an ISO date, roomier chips, a branch chooser for an ambiguous double-click, and
+tags that are actually visible.
+
+**Decisions that later work must not undo:**
+
+- **The Hash column is last and is not part of the saved state.** `column_widths` was already
+  truncated to two entries in `CommitHistoryWidget.export_state()`, so the new column needed no
+  migration and no state assertion changed. `setStretchLastSection(False)` is required: Qt
+  stretches the last section by default and would otherwise let the hash swallow the window.
+- **The date is formatted by git, never parsed.** `Defaults.logdate` is
+  `format:%Y-%m-%d %H:%M`; `get_date_for_current_time()` already routed a `format:` value through
+  `DateFormat.is_custom()`, so the STAGE and WORKTREE rows matched without a change. Carrying a
+  second date field on 1000 `Commit` objects was the alternative and was rejected.
+- **`sizeHint` reserved `fontMetrics.height() + 4`, which is exactly the padded chip and no
+  margin at all.** Measured over eight font sizes: from about 11 pt the chip was as tall as its
+  own row, and `paint()` clips to `option.rect`, so the corners were cut off. `ROW_V_MARGIN = 2`
+  is the fix, and it is a no-op at 8–9 pt where the `ROW_HEIGHT` floor already won.
+- **Row height is asserted as a property, not a number.** The two tests that pinned it to `26`
+  were only true on the machine that wrote `26` down; one of them was already failing on a 12 pt
+  desktop font. They now assert that the row is at least as tall as the chip plus its margin.
+- **The padding lives in two places that must agree**: `_draw_labels` draws the box,
+  `_label_hit_test` recomputes it, and two tests compare the two.
+- **`SelectBranchDialog` offers local branches only.** Mixing in the remote refs would make one OK
+  button mean *switch branch* on some rows and *create a tracking branch* on others. The
+  remote-only and multi-remote double-click paths are unchanged.
+- **Four existing dialogs were checked before adding one** — `GitCheckoutBranchDialog`,
+  `SelectRemoteBranch`, `SelectCommits` and `Switcher`. §2.4 of the plan records why each is the
+  wrong shape.
+- **A tag is marked three ways**: `chip_tag`, bold text and the `⚑` glyph. One signal is not
+  enough — on a greyscale palette the four fills are forced apart by lightness alone and hue stops
+  carrying meaning.
+- **`chip_tag` is the palette highlight rotated half a turn** with a saturation and a value floor.
+  Measured over thirteen palettes: four distinct fills on both row backgrounds, worst contrast
+  2.50.
+- **The bold weight needs the `QFont`, not just the metrics.** `QFontMetrics` does not expose the
+  font it was built from, so `_draw_labels`, `_labels_width` and `_label_hit_test` all take an
+  optional trailing `font`. The chip *height* keeps using the plain metrics — a bold font changes
+  the advance, not the line height.
+- **A new parameter on `_draw_labels` goes last.** One test calls it with nine positional
+  arguments.
+
+## 11. The paint path stopped rebuilding its colors, and the package became `fanta`
+
+Plan: `docs/plans/2026-08-01-paint-performance-and-fanta-module.md`.
+
+**Decisions that later work must not undo:**
+
+- **`inline_graph_style()` is memoized on the palette, not cached with invalidation.** It cost
+  5.1 ms and ran once per painted row, which put the history at about six frames per second.
+  Keying on the five palette roles keeps the original "no invalidation logic" property: a theme
+  change is a different key. Measured afterwards: 15 us per call, and a 30-row repaint went from
+  156 ms to 6.0 ms.
+- **The cache key is `(color.isValid(), color.rgba())`, and both halves are load-bearing.** An
+  invalid `QColor` and opaque black report the same `rgba()`, and `_opaque_color()` treats them
+  differently.
+- **`InlineGraphStyle` being frozen is what makes sharing one instance safe.** Do not make it
+  mutable.
+- **The color math was not touched.** `_lane_colors`, `_distinct_chip_backgrounds` and
+  `readable_chip_fill` keep their algorithms; only the entry points memoize. After that the
+  profile is Qt's own `drawText` and `drawRoundedRect`.
+- **`_prepare_labels`, `_row_labels` and `_tag_fonts` are deliberately not cached** — measured at
+  3.5-12 us, together under 0.5 ms of a 6 ms repaint. `_tag_fonts` additionally returns a
+  **mutable** `QFont`; caching that would break the "never mutate what you were handed" invariant
+  the other three caches rely on.
+- **The reader and the graph builder were profiled and left alone**: 64 ms for 1000 commits, 45 ms
+  of which is the `git log` subprocess, on a worker thread.
+- **The package rename is shallow on purpose.** Imports, module-path literals, packaging, build
+  files, the three extensionless launchers in `bin/`, and the two `resources.py` literals that
+  decide the installation prefix. Everything that merely *reads* like the old name stays: the
+  `git fanta cola` alias, `icons.cola()` and the `'icon': 'cola'` entries that reach it through
+  `getattr`, the `cola.*` config fallback, `ColaApplication`, `~/.cola`, and the `.po` source
+  references.
+- **`test/diffparse_test.py` still names the old package three times** because those lines describe
+  `test/fixtures/diff.txt`, a captured diff. Rewriting them breaks the test; rewriting the fixture
+  changes what the parser is tested against.
+- **`icons.from_name()` takes an `icons:` name, `icons.icon()` takes a basename.** The file panel
+  passed a bare basename to the first one, so Qt looked for `plus.svg` in the repository the user
+  had opened and every status icon was invisible. `icons.icon()` is the prefixing helper; every
+  other call site already used it or prefixed by hand.
+- **Two tests register the icon search path on purpose** and restore it, which is the exception to
+  "icons do not resolve in tests". They clear `icons.from_name.cache` at both ends, because a
+  memoized icon built before the path existed stays broken afterwards.
+
+## 12. The two sorts that should not have been sorts
+
+Plan: `docs/plans/2026-08-01-sorting-hot-paths.md`.
+
+All 47 sorting call sites in the package were inventoried and measured; two were worth changing,
+and in both cases the fix was to stop sorting rather than to sort differently.
+
+**Decisions that later work must not undo:**
+
+- **`_color_contrast()` compares, it does not sort.** Do not "tidy" it back into a `sorted()` or a
+  `max()`/`min()` pair: 365 ns, 226 ns and 109 ns respectively for the same answer. Every colour
+  search on the paint path reaches it, so it is the hottest function in the program on a cache
+  miss — but since section 11 landed, a miss is only the first paint and a theme change. Do not
+  quote its saving as a per-repaint number.
+- **The rebase row lookup keys on `id()`.** `RebaseTreeWidgetItem.__hash__` returns a string, so
+  the item cannot be a dict key. `__eq__` is identity, which is what makes `id()` equivalent to
+  what `list.index()` found.
+- **Timsort stays everywhere else.** A hand-written quicksort measured 16x slower and a merge sort
+  24x slower than `sorted()`, and `heapq` 2.5x slower, on 2000 elements.
+- **`completion.filter_matches()` was measured and left alone.** Folding its second `lower()` pass
+  into a decorate-sort-undecorate loop is 0.87x — slower, because the list comprehension it
+  replaces runs in C.
+- **`test/sequenceeditor_move_test.py` is the first coverage `fanta/sequenceeditor.py` ever had.**
+  Its nineteen tests are characterization tests: they described the behaviour before the change
+  and were not touched by it.
+
+## 13. Git Fanta installs alongside git-cola
+
+Design record: `docs/plans/2026-08-01-deployment-separation.md`. Seven commits,
+`d19f5f72 -> a04568af`.
+
+The package rename made `import cola` and `import fanta` coexist. This work package made
+everything the two projects show the *outside* distinct: installed commands, desktop files,
+AppStream ids, the Qt application name, the configuration directory and the version number.
+
+**Decisions that later work must not undo:**
+
+- **No `git-dag` compatibility alias.** It is tempting to keep installing `git-dag` "so old
+  scripts keep working". That alias is precisely the collision: the console script, `/usr/bin`
+  entry, `.desktop` file and AppStream id were all shared, and the last package installed won.
+  The fork installs `git-fanta-dag`; `git fanta dag` is the in-application spelling.
+- **`app_name='Git Fanta DAG'` in both launch paths.** `enforce_single_instance()` derives the
+  `QSystemSemaphore` key and shared memory id from `context.app_name`. `fanta/dag.py:cmd_dag` and
+  `fanta/main.py:cmd_dag` must agree; `test/dag_test.py` pins both.
+- **No silent configuration migration, ever.** `resources.migrate_config_home()`,
+  `resources.legacy_config_home()` and the fallbacks in `Settings.asdict()` that read the
+  other project's configuration are gone. `test/config_isolation_test.py` asserts the helpers no longer
+  exist. An explicit, user-triggered import action would be the right successor; adopting
+  another application's state unasked is not.
+- **The read-only `cola.*` git-config fallback stays** and is documented as transitional in
+  `docs/git-fanta.rst`. Git Fanta never writes a `cola.` key.
+- **The macOS CI job must not install the upstream Homebrew formula.** It hid undeclared
+  dependencies behind that
+  formula. Two orientation notes used to record the brew line as deliberate; they were right when
+  written and wrong afterwards.
+- **`CFBundleVersion` is substituted before `CFBundleShortVersionString`.** `sed`'s `.` matches
+  any character, so the three-part pattern would eat part of the four-part value. The order is in
+  `garden.yaml`, the Makefile and a comment in `Info.plist`.
+- **`pynsist.generated.cfg` sits next to `pynsist.cfg`, not under `build/`.** Every path inside a
+  pynsist config resolves relative to that config file's own directory.
+- **The version is the fork's own 1.x line.** `fanta/_version.py`, `fallback_version` and
+  `pynsist.cfg` must agree; `test/version_test.py` enforces it and rejects a 4.x number, which
+  would read as an upstream release.
+
+## 14. Release readiness
+
+Design record: `docs/plans/2026-08-02-release-readiness.md`. Nine commits,
+`c150ce4b -> 89f33c1c`.
+
+Everything between "installs alongside git-cola" and "can be released": the packaging that named
+the wrong project, the fallbacks that let another installation reach this one, the version, and a
+tag-driven release workflow.
+
+**Decisions that later work must not undo:**
+
+- **`garden test` is two pytest invocations, and merging them back re-breaks CI.**
+  `test/widgets_main_history_test.py` runs in its own process because the shared run segfaults
+  about one run in four, at a moving crash site. Refuted along the way: QtWebEngine (2/10 with the
+  import blocked) and teardown consistency (3/12 with every file closing its widgets). The file
+  alone is 0/15, split is 0/7. The cause is still unknown -- re-measure before changing this.
+- **None of the five removed fallbacks comes back.** The `cola.` config prefix,
+  `GIT_COLA_*`, `.git/GIT_COLA_MSG`, the `cola-prepare-commit-msg` hook and the
+  `git fanta cola` alias are gone by decision, and
+  `test/no_legacy_fallback_test.py` guards each one. A `'cola.<key>'` literal is now dead code,
+  not a working fallback.
+- **The pynsist version substitution must be section-aware.** `pynsist.cfg` has two `version=`
+  keys; a `sed -e 's/^version=.*/'` rewrites `[Python] version` too and pynsist rejects the
+  config. `contrib/win32/generate-pynsist-config.py` does it properly and three tests pin it.
+- **`garden.yaml` names no repository this fork does not own.** It arrived describing the upstream
+  project, down to push URLs targeting that project's website repositories. Three tests enforce
+  it. There is deliberately no `garden publish`.
+- **The version lives in four files at once** -- `fanta/_version.py`, `fallback_version`,
+  `pynsist.cfg` and both AppStream components. `test/version_test.py` holds them together, and
+  `release.yml` refuses a tag that disagrees with `_version.py`.
+- **`setuptools_scm` applies the version scheme to `fallback_version`.** An untagged build reports
+  the *next* dev version, so 1.0.1 in the file means `1.0.2.dev...` off a branch. That is correct;
+  a tagged build produces the bare number.
+- **`fanta/__main__.py` needs a body.** The package rename left it with only a docstring, so
+  `python -m fanta` printed nothing and exited 0 while the README documented it.
+
+## 15. Default layout and consistent item-view painting
+
+Plan: `docs/plans/2026-08-02-windows-view-fixes.md`.
+
+The default layout now gives the History and Branches docks the top row, and
+Status, Diff, and Commit message the bottom row. The Default theme explicitly
+paints selected and hovered `QAbstractItemView` rows from the palette so every
+platform, including Windows, shares the same row geometry and focus treatment.
+
+**Decisions that later work must not undo:**
+
+- **Do not bump `MainView.widget_version`.** The default state is captured from
+  the arranged docks for new users; `apply_state()` restores a saved
+  `windowstate` for existing users. A version bump would discard their layout.
+- **Mouse tracking on `CommitTreeWidget` is load-bearing.** It enables graph
+  label hit-testing. `GraphDelegate.background_brush()` now handles the hover
+  state for the Summary column instead of disabling tracking and breaking chip
+  tooltips.
+- **The item-view rules belong in `style_sheet_default()`, not per-widget
+  stylesheets.** The application-wide selector covers history and file trees,
+  keeps Windows aligned with Linux, and uses palette colours rather than a
+  Windows branch or hard-coded values.
+- **The filter controls derive their size from the font.** The count uses the
+  seven digits implied by its maximum, and both controls get a font-and-margin
+  minimum height instead of a platform-dependent `QLineEdit.sizeHint()`.
+
 ## Where the fork's tests live
 
 - `test/widgets_dag_history_test.py` — `CommitHistoryWidget`, `GitDAG`, state round-trips,
@@ -245,13 +499,22 @@ anything.
   sources or filenames, the allow-listed upstream references intact, `CHANGES.rst` untouched, no
   leftover `'cola.<key>'` config literals, and the coupling between `pyproject.toml`'s `name` and
   `cola/version.py`.
-- `test/env_rename_test.py`, `test/config_home_migration_test.py`,
-  `test/prepare_commit_msg_hook_test.py` — one file per backwards fallback introduced by the
-  rename. If you remove a fallback, these are the tests that are supposed to stop you.
+- `test/env_rename_test.py`, `test/prepare_commit_msg_hook_test.py` — one file per
+  backwards fallback introduced by the rename. If you remove a fallback, these are the
+  tests that are supposed to stop you.
+- `test/config_isolation_test.py` — the opposite invariant: Git Fanta never reads or
+  copies the configuration directory of the project it was forked from.
+- `test/macos_bundle_test.py`, `test/version_test.py` — the packaging invariants: an
+  unambiguous `Info.plist`, one version across all four packaging files, the section-aware
+  pynsist substitution, and `--version` naming this fork.
+- `test/no_legacy_fallback_test.py` — the five compatibility fallbacks removed in work
+  package 14. If you re-add one, this is what stops you.
 - `test/widgets_dag_history_test.py` enthält zusätzlich die Tabellentests für
   `commit_message_file_spans()` und die Format-Tests des Beschreibungsfelds.
 - `test/widgets_history_filelist_test.py` additionally holds the table test for
   `merge_numstat_rows()` and the multi-commit selection tests against a real repository
   (fixture `history_repo`).
 - `test/widgets_history_checkout_test.py` — die Checkout-Regel des Doppelklicks: Branch-Spitze,
+- `test/widgets_merge_preselect_test.py` covers the merge dialog's preselection; the menu entry
+  itself is covered in `test/widgets_history_checkout_test.py`.
   Mehrdeutigkeit, aktueller Branch, abgelöster HEAD, Pseudo-Commits.

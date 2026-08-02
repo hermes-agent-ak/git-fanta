@@ -84,7 +84,7 @@ install: install-files install-html install-man
 
 install-files:
 	$(MKDIR_P) $(DESTDIR)$(docdir)
-	$(INSTALL) -m 644 ../cola/data/*.html $(DESTDIR)$(docdir)
+	$(INSTALL) -m 644 ../fanta/data/*.html $(DESTDIR)$(docdir)
 	$(INSTALL) -m 644 *.rst $(DESTDIR)$(docdir)
 
 install-html: install-files html
@@ -94,4 +94,4 @@ install-html: install-files html
 install-man: man
 	$(MKDIR_P) $(DESTDIR)$(mandir)
 	$(INSTALL) -m 644 _build/man/git-fanta.1 $(DESTDIR)$(mandir)
-	$(INSTALL) -m 644 _build/man/git-dag.1 $(DESTDIR)$(mandir)
+	$(INSTALL) -m 644 _build/man/git-fanta-dag.1 $(DESTDIR)$(mandir)

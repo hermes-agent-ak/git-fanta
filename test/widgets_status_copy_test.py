@@ -7,7 +7,7 @@ strings on the clipboard, not just the first file.
 """
 from unittest.mock import patch
 
-from cola.widgets import status
+from fanta.widgets import status
 
 
 class _FakeSelection:

@@ -3,8 +3,8 @@ import os
 
 import pytest
 
-from cola import i18n
-from cola.i18n import N_
+from fanta import i18n
+from fanta.i18n import N_
 
 
 @pytest.fixture(autouse=True)

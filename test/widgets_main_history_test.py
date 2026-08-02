@@ -11,17 +11,17 @@ from unittest.mock import Mock
 
 import pytest
 
-from cola import cmds
-from cola import qtutils
-from cola.interaction import Interaction
-from cola.models import dag as dag_model
-from cola.models import graph as graph_model
-from cola.widgets import defs
-from cola.widgets import standard
-from cola.widgets.dag import GRAPH_ROW_ROLE
-from cola.widgets.dag import CommitHistoryWidget
-from cola.widgets.main import HISTORY_INLINE_GRAPH_DEFAULT_VERSION
-from cola.widgets.main import MainView
+from fanta import cmds
+from fanta import qtutils
+from fanta.interaction import Interaction
+from fanta.models import dag as dag_model
+from fanta.models import graph as graph_model
+from fanta.widgets import defs
+from fanta.widgets import standard
+from fanta.widgets.dag import GRAPH_ROW_ROLE
+from fanta.widgets.dag import CommitHistoryWidget
+from fanta.widgets.main import HISTORY_INLINE_GRAPH_DEFAULT_VERSION
+from fanta.widgets.main import MainView
 from qtpy import QtCore
 from qtpy import QtGui
 from qtpy import QtTest
@@ -56,6 +56,7 @@ VIEWER_ACTION_KEYS = {
     'diff_commit_all',
     'diff_selected_this',
     'diff_this_selected',
+    'merge_branch',
     'rebase_to_commit',
     'reset_hard',
     'reset_keep',
@@ -255,7 +256,7 @@ def _graph(commits):
 
 def _controlled_main(qapp, main_context, managed_qobject, monkeypatch, oids):
     ControlledReaderThread.instances = []
-    monkeypatch.setattr('cola.widgets.dag.ReaderThread', ControlledReaderThread)
+    monkeypatch.setattr('fanta.widgets.dag.ReaderThread', ControlledReaderThread)
     main_context.model.local_branches = ['main']
     main_context.model.remote_branches = []
     main_context.model.tags = []
@@ -311,6 +312,77 @@ def test_real_legacy_v2_state_preserves_existing_docks_and_reveals_history(
     assert _history_is_active(window.historydock)
 
 
+def test_the_default_layout_puts_history_and_branches_side_by_side(
+    qapp, main_context, managed_qobject
+):
+    """A fresh install gets the maintainer's arrangement, not the inherited one.
+
+    Existing users keep their saved layout: apply_state() only overrides the
+    arrangement when a windowstate was stored.
+    """
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+
+    top = QtCore.Qt.TopDockWidgetArea
+    bottom = QtCore.Qt.BottomDockWidgetArea
+
+    assert window.dockWidgetArea(window.historydock) == top
+    assert window.dockWidgetArea(window.branchdock) == top
+    assert window.dockWidgetArea(window.statusdock) == bottom
+    assert window.dockWidgetArea(window.diffdock) == bottom
+    assert window.dockWidgetArea(window.commitdock) == bottom
+
+
+def test_the_default_layout_does_not_tab_history_behind_anything(
+    qapp, main_context, managed_qobject
+):
+    """History is the largest pane; a tab would hide it behind Branches."""
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+
+    assert window.tabifiedDockWidgets(window.historydock) == []
+    assert window.historydock.isVisible()
+
+
+def test_the_default_layout_gives_history_the_most_room(
+    qapp, main_context, managed_qobject
+):
+    """History is the pane the maintainer works in; it gets the largest share.
+
+    Compare against the live geometry, never against pixel constants: the
+    offscreen platform and a real desktop lay out at different sizes.
+    """
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+    qapp.processEvents()
+
+    assert window.historydock.width() > window.branchdock.width()
+    assert window.historydock.height() > window.statusdock.height()
+
+
+def test_the_bottom_row_stays_draggable(qapp, main_context, managed_qobject):
+    """The initial height cap must be lifted, or the splitter is stuck."""
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+    qapp.processEvents()
+    QtTest.QTest.qWait(10)
+    qapp.processEvents()
+
+    for dock in (window.statusdock, window.diffdock, window.commitdock):
+        assert dock.widget().maximumHeight() >= defs.max_size
+
+
+def test_the_default_layout_keeps_actions_and_log_hidden(
+    qapp, main_context, managed_qobject
+):
+    """Characterization: these two were hidden before and stay hidden."""
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+
+    assert not window.actionsdock.isVisible()
+    assert not window.logdock.isVisible()
+
+
 def test_mainview_has_exactly_one_dock_owned_history_widget(
     qapp, main_context, managed_qobject
 ):
@@ -359,8 +431,8 @@ def test_mainview_history_context_actions_are_composed_once_and_disable_off_item
 
     assert isinstance(tree.menu_actions, dict)
     assert set(tree.menu_actions) == VIEWER_ACTION_KEYS
-    assert len(tree.menu_actions) == 24
-    assert len(set(tree.menu_actions.values())) == 24
+    assert len(tree.menu_actions) == 25
+    assert len(set(tree.menu_actions.values())) == 25
     assert {
         name for name, action in tree.menu_actions.items() if not action.isVisible()
     } == UNSUPPORTED_MAIN_VIEWER_ACTION_KEYS
@@ -454,7 +526,7 @@ def test_successful_initialize_loads_history_once_after_git_check_and_state_rest
         ))
 
     monkeypatch.setattr(MainView, 'init_state', restore_state)
-    monkeypatch.setattr('cola.widgets.main.version.git_version_str', git_version)
+    monkeypatch.setattr('fanta.widgets.main.version.git_version_str', git_version)
     monkeypatch.setattr(
         CommitHistoryWidget, 'load_if_stale', load_if_stale, raising=False
     )
@@ -477,9 +549,10 @@ def test_queued_model_update_before_git_check_uses_one_initial_request(
     qapp, main_context, managed_qobject, monkeypatch
 ):
     ControlledReaderThread.instances = []
-    monkeypatch.setattr('cola.widgets.dag.ReaderThread', ControlledReaderThread)
+    monkeypatch.setattr('fanta.widgets.dag.ReaderThread', ControlledReaderThread)
     monkeypatch.setattr(
-        'cola.widgets.main.version.git_version_str', lambda _context: 'git version test'
+        'fanta.widgets.main.version.git_version_str',
+        lambda _context: 'git version test',
     )
     main_context.model.local_branches = ['main']
     main_context.model.remote_branches = []
@@ -501,10 +574,10 @@ def test_failed_initialize_exits_without_loading_history(
     loads = []
     exits = []
     monkeypatch.setattr(
-        'cola.widgets.main.version.git_version_str', lambda _context: ''
+        'fanta.widgets.main.version.git_version_str', lambda _context: ''
     )
     monkeypatch.setattr(
-        'cola.widgets.main.Interaction.critical', lambda *_args, **_kwargs: None
+        'fanta.widgets.main.Interaction.critical', lambda *_args, **_kwargs: None
     )
     monkeypatch.setattr(main_context.app, 'exit', lambda code: exits.append(code))
     monkeypatch.setattr(
@@ -576,7 +649,7 @@ def test_refresh_reaches_hidden_history_before_missing_cwd_early_return(
     loads.clear()
     window.historydock.hide()
     monkeypatch.setattr(
-        'cola.widgets.main.core.getcwd',
+        'fanta.widgets.main.core.getcwd',
         lambda: (_ for _ in ()).throw(FileNotFoundError()),
     )
 
@@ -1332,7 +1405,7 @@ def test_mainview_close_waits_for_real_blocked_history_and_discards_pending(
         def get_worktree_commits(self):
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', BlockingReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', BlockingReader)
     main_context.browser_windows = []
     window = managed_qobject(MainView(main_context))
     history = window.historywidget

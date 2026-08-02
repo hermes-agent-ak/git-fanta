@@ -3,7 +3,7 @@ import time
 from unittest.mock import Mock
 from unittest.mock import patch
 
-from cola import cmds
+from fanta import cmds
 
 from . import helper
 from .helper import app_context
@@ -29,15 +29,15 @@ def test_commit_strip_comments_unicode():
 
 
 def test_unix_path_win32():
-    path = r'Z:\Program Files\git-fanta\bin\git-dag'
-    expect = '/Z/Program Files/git-fanta/bin/git-dag'
+    path = r'Z:\Program Files\git-fanta\bin\git-fanta-dag'
+    expect = '/Z/Program Files/git-fanta/bin/git-fanta-dag'
     actual = cmds.unix_path(path, is_win32=lambda: True)
     assert expect == actual
 
 
 def test_unix_path_network_win32():
-    path = r'\\Z\Program Files\git-fanta\bin\git-dag'
-    expect = '//Z/Program Files/git-fanta/bin/git-dag'
+    path = r'\\Z\Program Files\git-fanta\bin\git-fanta-dag'
+    expect = '//Z/Program Files/git-fanta/bin/git-fanta-dag'
     actual = cmds.unix_path(path, is_win32=lambda: True)
     assert expect == actual
 
@@ -67,7 +67,7 @@ def test_context_edit_command():
     assert model.filename == 'test_filename'
 
 
-@patch('cola.interaction.Interaction.confirm')
+@patch('fanta.interaction.Interaction.confirm')
 def test_submodule_add(confirm):
     # "git submodule" should not be called if the answer is "no"
     context = Mock()
@@ -118,8 +118,8 @@ def test_submodule_add(confirm):
     assert context.model.update_submodules_list.called
 
 
-@patch('cola.version.check_git')
-@patch('cola.interaction.Interaction.confirm')
+@patch('fanta.version.check_git')
+@patch('fanta.interaction.Interaction.confirm')
 def test_submodule_update(confirm, check_git):
     context = Mock()
     path = 'sub/path'
@@ -186,8 +186,8 @@ def test_submodule_update(confirm, check_git):
     assert context.model.update_file_status.called
 
 
-@patch('cola.cmds.Interaction')
-@patch('cola.cmds.prefs')
+@patch('fanta.cmds.Interaction')
+@patch('fanta.cmds.prefs')
 def test_undo_last_commit_confirms_action(prefs, interaction):
     """Test the behavior around confirmation of UndoLastCommit actions"""
     context = Mock()

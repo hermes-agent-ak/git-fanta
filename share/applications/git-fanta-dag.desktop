@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Git Fanta DAG
+Comment=Git DAG visualizer
+Comment[zh_TW]=Git 有向無環圖(DAG)視覺化檢視器
+TryExec=git-fanta-dag
+Exec=git-fanta-dag --prompt
+Icon=git-fanta
+StartupNotify=true
+Terminal=false
+Type=Application
+Categories=Development;RevisionControl;
+X-KDE-SubstituteUID=false

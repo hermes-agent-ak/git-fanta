@@ -1,8 +1,10 @@
 """Test the cola.gitcmds module"""
 import os
 
-from cola import core
-from cola import gitcmds
+import pytest
+
+from fanta import core
+from fanta import gitcmds
 
 from . import helper
 from .helper import app_context
@@ -247,3 +249,110 @@ def test_diff_patch_with_stat(app_context):
     assert gitcmds.diff_patch_with_stat(app_context, ['A'], head=False) == ''
     actual = gitcmds.diff_patch_with_stat(app_context, ['A'], head=True)
     assert '+A change' in actual
+
+
+def _commit_file(context, path, content, date):
+    """Commit `content` into `path` at a fixed date and return the oid.
+
+    The dates matter: "git rev-list --no-walk" orders by commit time, and
+    same-second commits would make the ordering assertions meaningless.
+    """
+    helper.write_file(path, content)
+    env = {'GIT_AUTHOR_DATE': date, 'GIT_COMMITTER_DATE': date}
+    context.git.add(path)
+    context.git.commit('-m', f'touch {path}', _add_env=env)
+    _status, out, _err = context.git.rev_parse('HEAD')
+    return out.strip()
+
+
+def test_commit_touching_path_returns_the_newest_toucher(app_context):
+    """Of the given commits, the newest one that changed the path wins."""
+    first = _commit_file(app_context, 'a.txt', 'one\n', '2026-01-01T10:00:00')
+    middle = _commit_file(app_context, 'b.txt', 'two\n', '2026-01-02T10:00:00')
+    last = _commit_file(app_context, 'a.txt', 'three\n', '2026-01-03T10:00:00')
+
+    result = gitcmds.commit_touching_path(app_context, [first, middle, last], 'a.txt')
+
+    assert result == last
+
+
+def test_commit_touching_path_ignores_commits_outside_the_list(app_context):
+    """A commit that is not in the list never wins, even if it is newer."""
+    first = _commit_file(app_context, 'a.txt', 'one\n', '2026-01-01T10:00:00')
+    middle = _commit_file(app_context, 'b.txt', 'two\n', '2026-01-02T10:00:00')
+    _commit_file(app_context, 'a.txt', 'three\n', '2026-01-03T10:00:00')
+
+    result = gitcmds.commit_touching_path(app_context, [first, middle], 'a.txt')
+
+    assert result == first
+
+
+def test_commit_touching_path_handles_the_root_commit(app_context):
+    """The root commit has no parent and is still a valid answer."""
+    root = _commit_file(app_context, 'a.txt', 'one\n', '2026-01-01T10:00:00')
+
+    assert gitcmds.commit_touching_path(app_context, [root], 'a.txt') == root
+
+
+def test_commit_touching_path_returns_none_when_nothing_touched_it(app_context):
+    """git exits 0 with empty output; absence is not an error (trap F2)."""
+    first = _commit_file(app_context, 'a.txt', 'one\n', '2026-01-01T10:00:00')
+
+    assert gitcmds.commit_touching_path(app_context, [first], 'b.txt') is None
+
+
+@pytest.mark.parametrize(('oids', 'path'), (([], 'a.txt'), (['a' * 40], '')))
+def test_commit_touching_path_without_usable_input(app_context, oids, path):
+    """No commits or no path means no lookup and no git call."""
+    assert gitcmds.commit_touching_path(app_context, oids, path) is None
+
+
+def _merge_repo(context):
+    """A branch ahead of main, one behind it, and one that diverged."""
+    helper.run_git('commit', '-m', 'base')
+    base = helper.run_git('rev-parse', 'HEAD').strip()
+    helper.run_git('checkout', '-q', '-b', 'ahead')
+    helper.write_file('ahead.txt', 'ahead\n')
+    helper.run_git('add', 'ahead.txt')
+    helper.run_git('commit', '-m', 'ahead')
+    helper.run_git('checkout', '-q', 'main')
+    helper.run_git('branch', 'behind', base)
+    helper.run_git('checkout', '-q', '-b', 'diverged', base)
+    helper.write_file('diverged.txt', 'diverged\n')
+    helper.run_git('add', 'diverged.txt')
+    helper.run_git('commit', '-m', 'diverged')
+    helper.run_git('checkout', '-q', 'main')
+    helper.write_file('main.txt', 'main\n')
+    helper.run_git('add', 'main.txt')
+    helper.run_git('commit', '-m', 'main work')
+    context.model.update_status()
+    return base
+
+
+@pytest.mark.parametrize(
+    ('ref', 'expected'),
+    (
+        ('ahead', True),
+        ('diverged', True),
+        ('behind', False),
+        ('main', False),
+    ),
+)
+def test_can_merge_reports_whether_the_ref_has_new_commits(app_context, ref, expected):
+    """Ahead and diverged both have something to merge; contained does not."""
+    _merge_repo(app_context)
+
+    assert gitcmds.can_merge(app_context, ref) is expected
+
+
+def test_can_merge_says_no_for_a_ref_that_does_not_exist(app_context):
+    """git exits 128 there; that is a no, not a crash (trap F2)."""
+    _merge_repo(app_context)
+
+    assert gitcmds.can_merge(app_context, 'no-such-branch') is False
+
+
+@pytest.mark.parametrize('ref', ('', None))
+def test_can_merge_says_no_without_a_ref(app_context, ref):
+    """No ref means no question to ask and no git call."""
+    assert gitcmds.can_merge(app_context, ref) is False

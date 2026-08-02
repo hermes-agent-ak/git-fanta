@@ -1,4 +1,4 @@
-from cola.models.stash import StashModel
+from fanta.models.stash import StashModel
 
 from . import helper
 from .helper import app_context

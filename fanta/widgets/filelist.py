@@ -1,0 +1,360 @@
+from qtpy import QtGui
+from qtpy import QtWidgets
+from qtpy.QtCore import Qt
+from qtpy.QtCore import Signal
+
+from .. import cmds
+from .. import hotkeys
+from .. import icons
+from .. import qtutils
+from ..i18n import N_
+from ..models import dag
+from .standard import TreeWidget
+
+
+class FileWidget(TreeWidget):
+    files_selected = Signal(object)
+    difftool_selected = Signal(object)
+    file_diff_requested = Signal(object, object)
+    histories_selected = Signal(object)
+    grab_file = Signal(object)
+    grab_file_from_parent = Signal(object)
+    select_line_range_for_file = Signal(object)
+    remark_toggled = Signal(object, object)
+
+    def __init__(self, context, parent, remarks=False):
+        TreeWidget.__init__(self, parent)
+        self.context = context
+        self._columns_initialized = False
+        # Die angezeigten Dateien gehoeren zu diesen Commits. Der Doppelklick
+        # braucht sie, um den Diff der Datei fuer den richtigen Commit zu oeffnen.
+        self.commits = []
+        self.setHeaderLabels([N_('Filename'), '+', '-'])
+
+        self.show_history_action = qtutils.add_action(
+            self, N_('Show History'), self.show_history, hotkeys.HISTORY
+        )
+        self.launch_difftool_action = qtutils.add_action(
+            self, N_('Launch Diff Tool'), self.show_diff
+        )
+        self.launch_editor_action = qtutils.add_action(
+            self, N_('Launch Editor'), self.edit_paths, hotkeys.EDIT
+        )
+        self.grab_file_action = qtutils.add_action(
+            self, N_('Grab File...'), self._grab_file
+        )
+        self.grab_file_from_parent_action = qtutils.add_action(
+            self, N_('Grab File from Parent Commit...'), self._grab_file_from_parent
+        )
+        self.select_line_range_action = qtutils.add_action(
+            self, N_('Trace Evolution of Line Range...'), self._select_line_range
+        )
+        if remarks:
+            self.toggle_remark_actions = tuple(
+                qtutils.add_action(
+                    self,
+                    r,
+                    lambda remark=r: self.toggle_remark(remark),
+                    hotkeys.hotkey(Qt.CTRL | getattr(Qt, 'Key_' + r)),
+                )
+                for r in map(str, range(10))
+            )
+        else:
+            self.toggle_remark_actions = tuple()
+
+        self.itemSelectionChanged.connect(self.selection_changed)
+        self.itemDoubleClicked.connect(self._file_double_clicked)
+
+    def selection_changed(self):
+        items = self.selected_items()
+        self.files_selected.emit([i.path for i in items])
+
+    def _file_double_clicked(self, item, _column):
+        """Fordert den Diff der doppelgeklickten Datei an.
+
+        Die Liste der Commits wird kopiert, damit der Empfaenger sie behalten
+        kann, waehrend sich die Auswahl im Widget weiterbewegt.
+        """
+        path = getattr(item, 'path', '')
+        if not path or not self.commits:
+            return
+        self.file_diff_requested.emit(list(self.commits), path)
+
+    def commits_selected(self, commits):
+        self.commits = list(commits)
+        if not commits:
+            self.clear()
+            return
+
+        status_by_path = {}
+        numstat_rows = []
+        for out, separator in self._changed_file_output(commits):
+            parsed_status, parsed_rows = parse_status_and_numstat(out, separator)
+            status_by_path.update(parsed_status)
+            numstat_rows.extend(parsed_rows)
+
+        merged_rows = merge_numstat_rows(numstat_rows)
+        self.list_files(merged_rows, status_by_path=status_by_path)
+
+    def _changed_file_output(self, commits):
+        """Yield an (output, separator) pair for every source in the selection.
+
+        The list shows the union of what the user picked, so all real commits
+        are described by a single "git show" over every one of them. STAGE and
+        WORKTREE are not revisions and need their own commands. A source that
+        fails is skipped rather than emptying the whole list.
+        """
+        git = self.context.git
+        oids = [
+            commit.oid
+            for commit in commits
+            if commit.oid not in (dag.STAGE, dag.WORKTREE)
+        ]
+        if oids:
+            # "git show" takes several revisions and emits one raw+numstat
+            # block per revision, in the order given -- the same shape it
+            # emits for a single one.
+            status, out, _ = git.show(
+                *oids,
+                format='',
+                numstat=True,
+                raw=True,
+                no_renames=True,
+                z=True,
+                _readonly=True,
+            )
+            if status == 0:
+                yield out, '\0'
+        # NOTE: The output from "git diff-files --numstat -z" is not equivalent
+        # to the output of "git show --numstat -z". "git diff-files" does not
+        # emit a NULL separator between each entry. That's why we use the
+        # default output (without "-z") and split on newline instead.
+        # This is also true for "git diff-index" as well.
+        selected = {commit.oid for commit in commits}
+        if dag.STAGE in selected:
+            status, out, _ = git.diff_index(
+                'HEAD', cached=True, numstat=True, raw=True, _readonly=True
+            )
+            if status == 0:
+                yield out, '\n'
+        if dag.WORKTREE in selected:
+            status, out, _ = git.diff_files(numstat=True, raw=True, _readonly=True)
+            if status == 0:
+                yield out, '\n'
+
+    def list_files(self, files_log, status_by_path=None):
+        self.clear()
+        if not files_log:
+            return
+        files = []
+        status_by_path = status_by_path or {}
+        for filename in files_log:
+            item = FileTreeWidgetItem(filename)
+            texts = filename.split('\t')
+            path = texts[2] if len(texts) >= 3 else ''
+            item.set_status(status_by_path.get(path, ''))
+            files.append(item)
+        self.insertTopLevelItems(0, files)
+
+    def _resize_columns(self):
+        """Set columns to their initial size"""
+        header_width = self.header().width() - 1
+        metrics = QtGui.QFontMetrics(self.font())
+        numbers_max = qtutils.fontmetrics_width(metrics, '12345678')  # Linux had 28,000,000+ LOC of code in 2020.
+        numbers_width = min(numbers_max, header_width // 8 - 1)
+        files_width = header_width - numbers_width * 2
+        self.setColumnWidth(0, files_width)
+        self.setColumnWidth(1, numbers_width)
+        self.setColumnWidth(2, numbers_width)
+
+    def showEvent(self, event):
+        """Defer initializaztion of column widths"""
+        super().showEvent(event)
+        if not self._columns_initialized:
+            self._columns_initialized = True
+            self._resize_columns()
+
+    def resizeEvent(self, event):
+        """Defer initializaztion of column widths"""
+        super().resizeEvent(event)
+        self._resize_columns()
+
+    def contextMenuEvent(self, event):
+        menu = qtutils.create_menu(N_('Actions'), self)
+        menu.addAction(self.select_line_range_action)
+        menu.addSeparator()
+        menu.addAction(self.grab_file_action)
+        menu.addAction(self.grab_file_from_parent_action)
+        menu.addAction(self.show_history_action)
+        menu.addAction(self.launch_difftool_action)
+        menu.addAction(self.launch_editor_action)
+        if self.toggle_remark_actions:
+            menu_toggle_remark = menu.addMenu(N_('Toggle remark of touching commits'))
+            tuple(map(menu_toggle_remark.addAction, self.toggle_remark_actions))
+        menu.exec_(self.mapToGlobal(event.pos()))
+
+    def show_diff(self):
+        self.difftool_selected.emit(self.selected_paths())
+
+    def _grab_file(self):
+        for path in self.selected_paths():
+            self.grab_file.emit(path)
+
+    def _grab_file_from_parent(self):
+        for path in self.selected_paths():
+            self.grab_file_from_parent.emit(path)
+
+    def _select_line_range(self):
+        """Emit a signal so that we can select the line range for the selected file"""
+        paths = self.selected_paths()
+        if paths:
+            self.select_line_range_for_file.emit(paths[0])
+
+    def all_paths(self):
+        """Every listed path, in display order"""
+        return [item.path for item in self.items()]
+
+    def selected_paths(self):
+        return [i.path for i in self.selected_items()]
+
+    def edit_paths(self):
+        cmds.do(cmds.Edit, self.context, self.selected_paths())
+
+    def show_history(self):
+        items = self.selected_items()
+        paths = [i.path for i in items]
+        self.histories_selected.emit(paths)
+
+    def toggle_remark(self, remark):
+        items = self.selected_items()
+        paths = tuple(i.path for i in items)
+        self.remark_toggled.emit(remark, paths)
+
+
+class FileTreeWidgetItem(QtWidgets.QTreeWidgetItem):
+    def __init__(self, file_log, parent=None):
+        QtWidgets.QTreeWidgetItem.__init__(self, parent)
+        texts = file_log.split('\t')
+        self.path = path = texts[2]
+        self.status = ''
+        self.setText(0, path)
+        self.setText(1, texts[0])
+        self.setText(2, texts[1])
+
+    def set_status(self, status):
+        """Apply a git diff --raw status code (e.g. 'A', 'M', 'D', 'T').
+
+        Updates the row icon and tooltip. Unknown/empty codes fall back to
+        the filename-derived icon, mirroring icons.status().
+        """
+        self.status = status or ''
+        basename = icons.diff_status_basename(self.status, self.path)
+        self.setIcon(0, icons.icon(basename))
+        labels = {
+            'A': 'Added',
+            'D': 'Deleted',
+            'M': 'Modified',
+            'T': 'Type changed',
+            'R': 'Renamed',
+            'C': 'Copied',
+        }
+        if self.status in labels:
+            self.setToolTip(0, labels[self.status])
+        else:
+            self.setToolTip(0, '')
+
+
+def _add_count(total, field):
+    """Add one numstat field to a running total.
+
+    Returns None as soon as a field is not a plain number: git writes '-'
+    instead of a count for binary files, and a total that mixes counted and
+    uncounted changes has no meaningful number to report.
+    """
+    if total is None or not field.isdigit():
+        return None
+    return total + int(field)
+
+
+def merge_numstat_rows(rows):
+    """Combine numstat rows so that every path is listed exactly once.
+
+    Rows arrive as ``adds\tdels\tpath``, one per path *per commit*. A path
+    that several selected commits touch is reported once, with its added and
+    deleted lines summed; its first appearance decides where it sits in the
+    list. A binary file keeps the '-' that git writes instead of a count.
+    """
+    totals = {}
+    for row in rows:
+        fields = row.split('\t')
+        if len(fields) < 3:
+            continue
+        path = fields[2]
+        adds, dels = totals.get(path, (0, 0))
+        totals[path] = (_add_count(adds, fields[0]), _add_count(dels, fields[1]))
+    return [
+        '{}\t{}\t{}'.format(
+            '-' if adds is None else adds, '-' if dels is None else dels, path
+        )
+        for path, (adds, dels) in totals.items()
+    ]
+
+
+def parse_status_and_numstat(output, separator):
+    """Parse the combined output of "git ... --raw --numstat".
+
+    Returns a ``(status_by_path, numstat_rows)`` tuple.
+
+    The raw block comes first and uses ``:old_mode new_mode old_sha new_sha
+    STATUS\\tpath`` per entry. The numstat block follows and uses
+    ``adds\\tdels\\tpath``. When ``--z`` is used, path is NUL-terminated
+    and appears as a separate token.
+
+    A merge commit emits numstat only; the raw block is empty and the
+    returned status map is empty too.
+    """
+    sep = '\0' if separator == '\0' else '\n'
+    status_by_path = {}
+    numstat_rows = []
+
+    if sep == '\0':
+        # Split into tokens. Raw entries are ":..." lines; raw paths are
+        # the token immediately after the raw entry; numstat entries have
+        # three tab-separated fields, the third being the path.
+        tokens = output.split('\0')
+        i = 0
+        n = len(tokens)
+        while i < n:
+            token = tokens[i]
+            if token.startswith(':'):
+                # ":old_mode new_mode old_sha new_sha STATUS"
+                parts = token.split(' ')
+                if len(parts) >= 5 and i + 1 < n:
+                    status_code = parts[4][:1]
+                    status_by_path[tokens[i + 1]] = status_code
+                    i += 2
+                    continue
+                i += 1
+                continue
+            if not token:
+                i += 1
+                continue
+            # Numstat row: "adds\tdels\tpath"
+            if token.count('\t') >= 2:
+                numstat_rows.append(token)
+            i += 1
+    else:
+        for line in output.split('\n'):
+            if not line:
+                continue
+            if line.startswith(':'):
+                parts = line.split('\t', 1)
+                if len(parts) == 2:
+                    head = parts[0].split(' ')
+                    if len(head) >= 5:
+                        status_by_path[parts[1]] = head[4][:1]
+                continue
+            if line.count('\t') >= 2:
+                numstat_rows.append(line)
+
+    return status_by_path, numstat_rows

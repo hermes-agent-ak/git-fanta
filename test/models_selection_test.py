@@ -1,4 +1,4 @@
-from cola.models import selection
+from fanta.models import selection
 
 from .helper import Mock
 

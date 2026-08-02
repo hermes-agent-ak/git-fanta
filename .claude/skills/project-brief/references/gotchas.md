@@ -88,8 +88,57 @@ scrollbar.
 on the history's nested splitters. Visibility guards written against a child keep working when the
 parent becomes the thing that is toggled.
 
+**`QFontMetrics` has no `font()` accessor.** Measured under PyQt5: `hasattr(metrics, 'font')` is
+`False`. Anything that needs a *variant* of the font a metrics object describes must be handed the
+`QFont` as well. A bold font changes the advance and **not** the line height, so mixed-weight
+labels in one row still line up.
+
+**`QHeaderView` stretches the last section by default.** `header().stretchLastSection()` is `True`
+on a fresh `QTreeWidget`. Giving a middle section `QHeaderView.Stretch` does not switch that off,
+and the two then fight over the slack.
+
+**A modal dialog reached from a test hangs pytest forever** — no error, no timeout, just a run
+that never finishes. Anything in the production path that can call `exec_()` must be patched out
+in every test that can reach it.
+
 **A `QSyntaxHighlighter`'s formats are invisible to `QTextCursor.charFormat()`.** They live as
 additional formats in the layout; read them with `block.layout().formats()`.
+
+
+**The inline graph's chip color names are misleading.** `chip_head` paints **local** branches
+(`heads/…`), `chip_other` is the fallback that **remote** branches land in, `chip_tag` paints
+tags, and `chip_remote` paints nothing but the `HEAD` chip. See `cola/widgets/dag.py` where the
+brush is chosen. There are **four** chip colors; `_distinct_chip_backgrounds()` and
+`readable_chip_fills()` both have to keep producing four distinct ones.
+
+**An invalid `QColor` and opaque black report the same `rgba()`** — both `0xff000000`. Measured.
+Anything that keys on a color has to carry `isValid()` as well, because `_opaque_color()`
+synthesizes mid-grey for the invalid one and leaves black alone.
+
+**`inline_graph_style()` is memoized on the palette.** It returns a shared frozen instance, so an
+equal palette hands back the *same object* — a test that asserts `is not` between two calls is
+asserting the old, uncached behavior. A different palette is a different key; nothing invalidates.
+
+**Contrast ratio is luminance-only, so it cannot assert that two colors look different.** Forcing
+several fills to the same contrast floor against the same background necessarily puts them at the
+same luminance, which reads as "contrast 1.0" between them while they stay clearly different
+hues. Assert distinctness on hue.
+
+**`MessageBox` is shared by `confirm()`, `critical()` and `information()`.** A change to its size
+or position is felt in every dialog in the application.
+
+
+**`ViewerMixin.menu_actions` is `None` until something assigns it.** Only `GitDAG` calls
+`viewer_actions()`; a bare `CommitTreeWidget` has `None` and `update_menu_actions()` raises
+`TypeError`. Tests must assign `viewer_actions(tree, tree)` themselves.
+
+**The history's action set is asserted exactly.**
+`test_mainview_history_context_actions_are_composed_once_and_disable_off_item` compares the key
+set and the count twice. Adding a context-menu action means editing `VIEWER_ACTION_KEYS` and two
+literals in the same file.
+
+**Radio buttons wired with `qtutils.connect_released` do not react to `setChecked()`.** `released`
+is a user gesture; changing the state in code has to run the same update by hand.
 
 ## Git output
 
@@ -125,6 +174,24 @@ carry `-` instead of a count in both fields.
 **`FileWidget.commits_selected` must not grow a git call per commit.**
 `test_public_selection_reaches_all_standalone_consumers_synchronously`
 (`test/widgets_dag_history_test.py`) monkeypatches `git.show` and asserts it ran exactly once.
+
+
+**`git rev-list --no-walk <oids> -- <path>` answers "which of these commits touched this file".**
+It does not walk ancestors, so a commit outside the list can never be the answer, and its default
+ordering is by commit date, newest first -- `--max-count=1` therefore yields the newest toucher.
+An empty result is exit status 0 with empty output, not an error. Beware when probing this in a
+script-built repository: commits made in the same second fall back to argument order and make the
+ordering look input-driven.
+
+**Plain `git checkout <name>` is not a safe way to materialise a remote branch.** It depends on
+`checkout.guess` being enabled, and when a local branch of the same name already exists elsewhere
+it silently checks that one out. Use `git checkout -b <name> --track <remote>/<name>`.
+
+
+**`git merge-base --is-ancestor` does not answer "can I merge this".** It reports a diverged
+branch as not an ancestor, although a diverged branch is the ordinary merge case. Count instead:
+`git rev-list --count HEAD..<ref>` is greater than zero exactly when there is something to merge.
+A ref that does not resolve exits 128 with empty output.
 
 ## Icons
 
@@ -174,7 +241,68 @@ pytest capture that is an error, not a `False`. Monkeypatch it in every test tha
 **`cmds.do()` swallows exceptions** into `Interaction.critical` (`cola/cmds.py:3591`). A broken
 command does not fail a test by itself; assert on the git state or the model instead.
 
+**Four tests in `test/git_test.py` need `python` on `PATH`, not just `python3`.** `test_stdout`,
+`test_stderr`, `test_stdout_and_stderr` and `test_it_doesnt_deadlock` call
+`git.Git.execute(['python', '-c', ...])`. When `python` does not resolve, `core.py` turns the
+`OSError` into `EXIT_UNAVAILABLE` and all four fail with `assert 69 == 0` — a status that says
+nothing about the cause. A virtualenv's `bin/` always provides `python`, which is why `garden
+test` never sees this. Run the full suite as `PATH="$PWD/env3/bin:$PATH" ... pytest test/`.
+
+**The full offscreen suite segfaults intermittently, and it is not your change.** A whole-suite
+run prints `Fatal Python error: Segmentation fault` roughly one run in four. Measured on
+2026-08-01 over 26 full runs: 4/10 on the branch under development, 2/10 on its merge base, 1/6
+on the merge-base *production* code with only the branch's new test files copied in, and 1/6
+again from inside the `env3` virtualenv with everything passing. **The crash site moves between
+runs** — `widgets/dag.py` `__init__`, `widgets/main.py` `__init__`, `widgets/text.py:_refresh_rect`
+via `diff.py:resizeEvent`, even inside `subprocess`. The affected file always passes when run
+alone. Before spending a cycle on it, run the same suite on the merge base a few times; a single
+crash on your branch proves nothing.
+
+## Sorting
+
+**Do not replace `sorted()` with a hand-written algorithm.** Measured on 2000 floats: `sorted()`
+0.28 ms, `heapq` 0.69 ms, textbook quicksort 4.57 ms, textbook merge sort 6.62 ms. Timsort runs
+inside one C call and exploits the runs that git output already has; every comparison in a Python
+implementation is a bytecode round trip. The wins are in *not* sorting — a comparison instead of
+`sorted()` on two values, `min()` instead of `sorted(x)[0]`, one index pass instead of
+`list.index()` per lookup.
+
+**`RebaseTreeWidgetItem` is unhashable.** `__hash__` returns `self.oid`, a string, so `hash(item)`
+raises `TypeError` and the item cannot be a dict key or a set member. `__eq__` is `self is other`,
+so anything that needs a lookup table keys on `id(item)` — that finds the same row `list.index()`
+would.
+
+**`fanta/polib.py` is vendored third-party code** (MIT, `extras/polib/LICENSE`). It holds six of
+the package's forty-seven sorting call sites and none of them are ours to change.
+
 ## Toolchain
+
+**An icon built before `icons.install()` stays broken.** `QIcon` resolves its file lazily and
+caches the failure: registering the `icons:` search path afterwards does not repair it, and
+`icons.from_name` is memoized on top, so one early lookup poisons every later user of that name.
+A test that registers the search path must clear `icons.from_name.cache` on the way in and out.
+
+**`QIcon.isNull()` answers the wrong question.** `QIcon('does-not-exist.svg')` is *not* null — only
+an icon built from an empty string is. "Does this icon render" is `icon.pixmap(16, 16).isNull()`.
+
+**`icons.from_name()` wants an `icons:`-prefixed name; `icons.icon()` wants a bare basename.**
+Handing a basename to `from_name()` makes Qt resolve it against the process working directory,
+which is the repository the user opened — the icon silently disappears and `qt.svg` prints one
+warning per name. `qtutils.create_treeitem()` prefixes by hand with `icons.name_from_basename()`;
+everything else goes through `icons.icon()`.
+
+**The three launchers in `bin/` are Python without a `.py` extension.** `git ls-files '*.py'` does
+not match `bin/git-fanta`, `bin/git-fanta-dag` or `bin/git-fanta-sequence-editor`; any sweep over the
+sources has to name them. `bin/_activate_fanta.py` does have the extension.
+
+**`fanta/resources.py` derives the installation prefix from the package directory name.** Two
+`endswith(os.path.join(..., 'fanta'))` checks distinguish a Unix release tree, a Windows release
+tree and the source tree. They are code, not comments, and a rename that misses them silently
+computes the wrong prefix for an installed release.
+
+**`git mv <dir> <existing-dir>` moves *into* it and exits 0.** A leftover target directory holding
+only ignored files survives `git clean -fd`, so a retried rename can silently nest the package.
+Guard with `ls -d <target>` first.
 
 **The formatter is `cercis`, not black** (`[tool.cercis]` in `pyproject.toml`, plus the
 pre-commit hook). Line length 88, `function-definition-extra-indent = false`.
@@ -200,13 +328,14 @@ The asset it returns is `git-fanta.svg`; the function name is not user-visible.
 version display falls back to the builtin value without saying so.
 `test_distribution_name_matches_pyproject` guards it.
 
-**`brew install git-cola` in `.github/workflows/ci.yml` is not a leftover.** It installs the real
-upstream Homebrew formula as a dependency of the macOS job. Renaming it breaks that job.
+**The macOS CI job installs only Git Fanta's own dependencies.** It used to run
+`brew install git-cola`, which pulled the other Git GUI into the build environment and hid any
+dependency Git Fanta failed to declare. Do not put it back; add the concrete formula instead.
 
-**A forgotten `'cola.<key>'` literal will not turn a test red.** `cola/gitcfg.py` falls back to
-the old prefix by design, so the stale key keeps working and the rename is quietly incomplete.
-`test_no_legacy_config_key_literals` in `test/rename_guard_test.py` is the only thing that
-notices — there are 34 such literals outside `cola/models/prefs.py`, spread over 16 files.
+**A `'cola.<key>'` literal is dead code, not a fallback.** `fanta/gitcfg.py` used to probe
+the old prefix, which kept a forgotten literal working. Work package 14 removed that, so
+such a literal now reads a key nothing sets and the setting silently stops working.
+`test_no_legacy_config_key_literals` in `test/rename_guard_test.py` finds them.
 
 **The upstream references are load-bearing.** `CHANGES.rst`, the `github.com/git-cola/...` links
 in code comments, and the remotes in `garden.yaml` point at a project that still exists.

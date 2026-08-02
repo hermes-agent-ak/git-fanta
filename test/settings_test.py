@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from cola.settings import Settings
+from fanta.settings import Settings
 
 from . import helper
 

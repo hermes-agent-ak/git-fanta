@@ -44,8 +44,8 @@ cola_app_base= $(cola_base).app
 cola_app = $(CURDIR)/$(cola_app_base)
 cola_app_resources = $(cola_app)/Contents/Resources
 
-# Read $(VERSION) from cola/_version.py and strip quotes.
-include cola/_version.py
+# Read $(VERSION) from fanta/_version.py and strip quotes.
+include fanta/_version.py
 cola_version := $(subst ',,$(VERSION))
 
 install_args =
@@ -57,7 +57,7 @@ install_args += --disable-pip-version-check
 install_args += --ignore-installed
 install_args += --no-deps
 
-PYTHON_DIRS = cola
+PYTHON_DIRS = fanta
 PYTHON_DIRS += test
 
 ALL_PYTHON_DIRS = $(PYTHON_DIRS)
@@ -82,11 +82,11 @@ install-desktop-files::
 
 install-icons::
 	$(MKDIR_P) "$(DESTDIR)$(icons_scalabledir)"
-	$(INSTALL) -m 664 cola/icons/git-fanta.svg "$(DESTDIR)$(icons_scalabledir)"
+	$(INSTALL) -m 664 fanta/icons/git-fanta.svg "$(DESTDIR)$(icons_scalabledir)"
 
 install-htmldocs::
 	$(MKDIR_P) "$(DESTDIR)$(docdir)"
-	$(INSTALL) -m 664 cola/data/*.html "$(DESTDIR)$(docdir)"
+	$(INSTALL) -m 664 fanta/data/*.html "$(DESTDIR)$(docdir)"
 
 install-metainfo::
 	$(MKDIR_P) "$(DESTDIR)$(metainfodir)"
@@ -118,19 +118,19 @@ install-man::
 
 .PHONY: uninstall
 uninstall::
-	$(RM) "$(DESTDIR)$(prefix)"/bin/cola
+	$(RM) "$(DESTDIR)$(prefix)"/bin/fanta
 	$(RM) "$(DESTDIR)$(prefix)"/bin/git-fanta
 	$(RM) "$(DESTDIR)$(prefix)"/bin/git-fanta-sequence-editor
-	$(RM) "$(DESTDIR)$(prefix)"/bin/git-dag
+	$(RM) "$(DESTDIR)$(prefix)"/bin/git-fanta-dag
 	$(RM) "$(DESTDIR)$(prefix)"/share/applications/git-fanta.desktop
 	$(RM) "$(DESTDIR)$(prefix)"/share/applications/git-fanta-folder-handler.desktop
-	$(RM) "$(DESTDIR)$(prefix)"/share/applications/git-dag.desktop
-	$(RM) "$(DESTDIR)$(prefix)"/share/metainfo/git-dag.appdata.xml
-	$(RM) "$(DESTDIR)$(prefix)"/share/metainfo/git-fanta.appdata.xml
+	$(RM) "$(DESTDIR)$(prefix)"/share/applications/git-fanta-dag.desktop
+	$(RM) "$(DESTDIR)$(prefix)"/share/metainfo/git-fanta-dag.metainfo.xml
+	$(RM) "$(DESTDIR)$(prefix)"/share/metainfo/git-fanta.metainfo.xml
 	$(RM) "$(DESTDIR)$(prefix)"/share/icons/hicolor/scalable/apps/git-fanta.svg
 	$(RM_R) "$(DESTDIR)$(prefix)"/share/doc/git-fanta
 	$(RM_R) "$(DESTDIR)$(pythondir)"/git_fanta-*
-	$(RM_R) "$(DESTDIR)$(pythondir)"/cola
+	$(RM_R) "$(DESTDIR)$(pythondir)"/fanta
 	$(RMDIR) -p "$(DESTDIR)$(pythondir)" 2>/dev/null || true
 	$(RMDIR) "$(DESTDIR)$(prefix)"/share/applications 2>/dev/null || true
 	$(RMDIR) "$(DESTDIR)$(prefix)"/share/metainfo 2>/dev/null || true

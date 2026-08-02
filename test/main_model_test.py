@@ -3,13 +3,13 @@ from unittest.mock import Mock
 
 import pytest
 
-from cola import core
-from cola import git
-from cola.models import main
-from cola.models.main import FETCH
-from cola.models.main import FETCH_HEAD
-from cola.models.main import PULL
-from cola.models.main import PUSH
+from fanta import core
+from fanta import git
+from fanta.models import main
+from fanta.models.main import FETCH
+from fanta.models.main import FETCH_HEAD
+from fanta.models.main import PULL
+from fanta.models.main import PUSH
 
 from . import helper
 from .helper import app_context

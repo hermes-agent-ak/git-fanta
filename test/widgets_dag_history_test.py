@@ -9,29 +9,38 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cola import dag as dag_cli
-from cola import main as main_cli
-from cola.interaction import Interaction
-from cola.models import dag
-from cola.models import graph as graph_model
-from cola.widgets import standard
-from cola.widgets.dag import COMMIT_ROLE
-from cola.widgets.dag import GRAPH_PREV_ROW_ROLE
-from cola.widgets.dag import GRAPH_ROW_ROLE
-from cola.widgets.dag import CommitDescriptionWidget
-from cola.widgets.dag import CommitHistoryWidget
-from cola.widgets.dag import CommitTreeWidget
-from cola.widgets.dag import CommitTreeWidgetItem
-from cola.widgets.dag import EdgeColor
-from cola.widgets.dag import GitDAG
-from cola.widgets.dag import GraphDelegate
-from cola.widgets.dag import ReaderThread
-from cola.widgets.dag import _best_contrast
-from cola.widgets.dag import _HistoryCacheMetadata
-from cola.widgets.dag import _opaque_color
-from cola.widgets.dag import commit_message_file_spans
-from cola.widgets.dag import inline_graph_style
-from cola.widgets.main import MainView
+from fanta import dag as dag_cli
+from fanta import main as main_cli
+from fanta.interaction import Interaction
+from fanta.models import dag
+from fanta.models import graph as graph_model
+from fanta.widgets import dag as dagwidget
+from fanta.widgets import standard
+from fanta.widgets.dag import COMMIT_ROLE
+from fanta.widgets.dag import GRAPH_PREV_ROW_ROLE
+from fanta.widgets.dag import GRAPH_ROW_ROLE
+from fanta.widgets.dag import CommitDescriptionWidget
+from fanta.widgets.dag import CommitHistoryWidget
+from fanta.widgets.dag import CommitTreeWidget
+from fanta.widgets.dag import CommitTreeWidgetItem
+from fanta.widgets.dag import EdgeColor
+from fanta.widgets.dag import GitDAG
+from fanta.widgets.dag import GraphDelegate
+from fanta.widgets.dag import ReaderThread
+from fanta.widgets.dag import _best_contrast
+from fanta.widgets.dag import _color_contrast
+from fanta.widgets.dag import _HistoryCacheMetadata
+from fanta.widgets.dag import _opaque_color
+from fanta.widgets.dag import _palette_key
+from fanta.widgets.dag import commit_message_file_spans
+from fanta.widgets.dag import date_column_width
+from fanta.widgets.dag import inline_graph_style
+from fanta.widgets.dag import merge_candidate
+from fanta.widgets.dag import oid_column_width
+from fanta.widgets.dag import readable_chip_fill
+from fanta.widgets.dag import readable_chip_fills
+from fanta.widgets.dag import short_oid
+from fanta.widgets.main import MainView
 from qtpy import QtCore
 from qtpy import QtGui
 from qtpy import QtTest
@@ -75,6 +84,13 @@ def managed_qobject(qapp):
     # before deleting their receivers.
     QtTest.QTest.qWait(5)
     qapp.processEvents()
+    # Close shown windows before deleting them. deleteLater() alone leaves a
+    # visible top-level window registered with the platform integration until
+    # the delete is delivered, and this file shows five of them.
+    for obj in reversed(objects):
+        if isinstance(obj, QtWidgets.QWidget):
+            obj.close()
+    qapp.processEvents()
     for obj in reversed(objects):
         thread = (
             obj
@@ -86,6 +102,7 @@ def managed_qobject(qapp):
             assert thread.wait(5000)
         obj.deleteLater()
     QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+    qapp.processEvents()
 
 
 def _commit(context, factory, oid, parents=()):
@@ -152,7 +169,7 @@ def test_load_if_stale_advances_generation_and_never_parses_refs_on_gui_thread(
         parse_calls.append(QtCore.QThread.currentThread())
         raise AssertionError('history refresh must not resolve refs on the GUI thread')
 
-    monkeypatch.setattr('cola.gitcmds.parse_refs', forbidden_parse_refs)
+    monkeypatch.setattr('fanta.gitcmds.parse_refs', forbidden_parse_refs)
 
     history.load_if_stale()
     first_generation = history.active_cache_metadata.generation
@@ -241,7 +258,7 @@ def test_two_history_widgets_have_independent_state(
     qapp, app_context, managed_qobject, monkeypatch
 ):
     ManualReaderThread.instances = []
-    monkeypatch.setattr('cola.widgets.dag.ReaderThread', ManualReaderThread)
+    monkeypatch.setattr('fanta.widgets.dag.ReaderThread', ManualReaderThread)
     first = CommitHistoryWidget(app_context, ref='one', count=1)
     second = managed_qobject(CommitHistoryWidget(app_context, ref='two', count=2))
     factory = dag.CommitFactory()
@@ -307,8 +324,8 @@ def test_gitdag_composes_history_with_window_only_views(
     assert window.filewidget is not None
     assert window.historywidget.display_inline_graph_action.isChecked() is False
     assert window.historywidget.treewidget.itemDelegateForColumn(0) is None
-    assert len(window.historywidget.treewidget.menu_actions) == 24
-    assert len(set(window.historywidget.treewidget.menu_actions.values())) == 24
+    assert len(window.historywidget.treewidget.menu_actions) == 25
+    assert len(set(window.historywidget.treewidget.menu_actions.values())) == 25
     for name in (
         'active_thread',
         'pending_request',
@@ -445,7 +462,7 @@ def test_failed_or_stale_result_preserves_all_standalone_views(
         app_context.git, 'show', lambda *_args, **_kwargs: (0, '1\t0\told.txt\0', '')
     )
     ManualReaderThread.instances = []
-    monkeypatch.setattr('cola.widgets.dag.ReaderThread', ManualReaderThread)
+    monkeypatch.setattr('fanta.widgets.dag.ReaderThread', ManualReaderThread)
     window = managed_qobject(GitDAG(app_context, dag.DAG('HEAD', 1000)))
     history = window.historywidget
     factory = dag.CommitFactory()
@@ -545,7 +562,12 @@ def test_inline_graph_style_is_palette_derived_distinct_and_repeatable(palette):
     second = inline_graph_style(QtGui.QPalette(palette))
 
     assert first == second
-    assert first is not second
+    # The style is memoized on the identity of the five palette roles it reads,
+    # so an equal palette hands back the same frozen instance. What still has to
+    # hold is that a different palette produces a different style, without any
+    # invalidation call - that is what the two tests at the end of this file
+    # pin down.
+    assert first is second
     with pytest.raises(AttributeError):
         first.normal_fill = QtGui.QColor('#000000')
     assert len(first.lane_colors) >= 4
@@ -1046,8 +1068,12 @@ def test_graph_delegate_offscreen_nodes_selection_lanes_and_size(
         option, tree.indexFromItem(tree.topLevelItem(0), 0)
     )
     assert GraphDelegate.LANE_WIDTH == 18
-    assert hint.height() == 26
-    assert 24 <= hint.height() <= 28
+    # The row height follows the desktop font, so pinning it to a number only
+    # holds on the machine that wrote the number down. What has to hold
+    # everywhere is that a chip fits inside its row with a margin left over.
+    chip_height = option.fontMetrics.height() + 2 * GraphDelegate.LABEL_V_PADDING
+    assert hint.height() >= GraphDelegate.ROW_HEIGHT
+    assert hint.height() >= chip_height + 2 * GraphDelegate.ROW_V_MARGIN
 
 
 @pytest.mark.parametrize('point_size', (18, 24))
@@ -1091,6 +1117,8 @@ class _TextRecordingPainter:
         self.rounded_rects = []
         self.rounded_widths = []
         self.ellipses = []
+        self.font = None
+        self.text_fonts = []
 
     def save(self):
         pass
@@ -1113,8 +1141,8 @@ class _TextRecordingPainter:
     def setBrush(self, brush):
         self.brush = QtGui.QBrush(brush)
 
-    def setFont(self, *_args):
-        pass
+    def setFont(self, font):
+        self.font = QtGui.QFont(font)
 
     def drawLine(self, *_args):
         pass
@@ -1135,6 +1163,7 @@ class _TextRecordingPainter:
 
     def drawText(self, *args):
         self.text_colors.append((str(args[-1]), self.pen.color()))
+        self.text_fonts.append(QtGui.QFont(self.font) if self.font else None)
 
 
 def test_24pt_visible_chip_and_hit_area_have_identical_boundaries(
@@ -1169,7 +1198,8 @@ def test_24pt_visible_chip_and_hit_area_have_identical_boundaries(
     chip = painter.rounded_rects[0]
     x = chip.center().x()
 
-    assert hint.height() == max(26, metrics.height() + 4)
+    chip_height = metrics.height() + 2 * GraphDelegate.LABEL_V_PADDING
+    assert hint.height() >= chip_height + 2 * GraphDelegate.ROW_V_MARGIN
     for y in (chip.top(), chip.bottom()):
         assert (
             tree.graph_delegate._label_hit_test(
@@ -1217,6 +1247,7 @@ def test_draw_labels_makes_every_adversarial_chip_opaque_and_contrasting(
         QtGui.QFontMetrics(qapp.font()),
         None,
         style,
+        palette.highlight().color() if selected else palette.base().color(),
         selected_text,
     )
 
@@ -1272,22 +1303,30 @@ def test_selected_inline_summary_and_each_chip_have_contrasting_text(
 
     style = inline_graph_style(palette)
     assert painter.fills == [palette.highlight().color()]
+    expected_background = palette.highlight().color()
+    expected_chips = readable_chip_fills(
+        (style.chip_other, style.chip_remote, style.chip_tag, style.chip_head),
+        expected_background,
+    )
+    # 'other' is the fallback chip, 'tags/v1' the tag chip, 'heads/main' the
+    # local branch chip. chip_remote paints HEAD, which this row does not carry.
     assert [background for _pen, background in painter.rounded_styles] == [
-        style.chip_other,
-        style.chip_remote,
-        style.chip_head,
+        expected_chips[0],
+        expected_chips[2],
+        expected_chips[3],
     ]
     for pen, background in painter.rounded_styles:
         assert _contrast(pen, background) >= 4.5
     text_colors = dict(painter.text_colors)
-    assert set(text_colors) >= {'other', 'v1', 'main', 'commit commit'}
+    tag_text = GraphDelegate.TAG_MARKER + 'v1'
+    assert set(text_colors) >= {'other', tag_text, 'main', 'commit commit'}
     assert text_colors['commit commit'] == palette.highlightedText().color()
 
 
 def test_commit_tree_palette_change_updates_viewport_and_next_paint_style(
     qapp, app_context, managed_qobject, monkeypatch
 ):
-    import cola.widgets.dag as dag_widget
+    import fanta.widgets.dag as dag_widget
 
     first = _palette('#ffffff', '#202020', '#ffffff', '#eeeeee', '#225f99', '#ffffff')
     second = _palette('#181818', '#eeeeee', '#151515', '#292929', '#b66d24', '#111111')
@@ -1328,9 +1367,14 @@ def test_default_column_ratio_prioritizes_summary_without_overwriting_saved_widt
     history.show()
     qapp.processEvents()
 
-    assert tree.columnWidth(CommitTreeWidgetItem.SUMMARY) == pytest.approx(
-        tree.header().width() * 0.70, abs=2
+    assert tree.columnWidth(CommitTreeWidgetItem.OID) == oid_column_width(
+        tree, tree.oid_length
     )
+    assert tree.columnWidth(CommitTreeWidgetItem.DATE) >= date_column_width(tree)
+    assert tree.columnWidth(CommitTreeWidgetItem.SUMMARY) > tree.columnWidth(
+        CommitTreeWidgetItem.AUTHOR
+    )
+    assert sum(tree.columnWidth(column) for column in range(4)) == tree.header().width()
     assert tree.columnWidth(CommitTreeWidgetItem.AUTHOR) == pytest.approx(
         tree.header().width() * 0.15, abs=2
     )
@@ -1354,6 +1398,59 @@ def test_display_inline_graph_installs_and_removes_delegate(
 
     tree.display_inline_graph(False)
     assert tree.itemDelegateForColumn(0) is None
+
+
+def test_the_history_filter_row_is_readable(qapp, app_context, managed_qobject):
+    """The revision field and the count both need room for their text.
+
+    standard.SpinBox sizes itself from a digit count, and passing digits=None
+    turns that off -- on Windows the number then touches the spin buttons.
+    """
+    widget = managed_qobject(CommitHistoryWidget(app_context))
+    widget.show()
+    qapp.processEvents()
+
+    line_height = widget.revtext.fontMetrics().height()
+
+    assert widget.maxresults.minimumWidth() > 0
+    assert widget.revtext.minimumHeight() >= line_height
+    assert widget.maxresults.minimumHeight() >= line_height
+
+
+def test_the_graph_delegate_paints_hover_like_the_other_columns(
+    qapp, app_context, managed_qobject
+):
+    """Only the Summary column uses GraphDelegate; the rest use the default one.
+
+    The tree has mouse tracking on for label hit-testing, so hovering a row
+    sets State_MouseOver. The default delegate paints that and GraphDelegate
+    did not, which lit up Author, Hash and Date but not Summary.
+    """
+    delegate = managed_qobject(GraphDelegate(None))
+    option = QtWidgets.QStyleOptionViewItem()
+    option.state = QtWidgets.QStyle.State_MouseOver
+
+    assert delegate.background_brush(option) is not None
+
+
+def test_selection_wins_over_hover(qapp, managed_qobject):
+    """A hovered *and* selected row must not paint the hover colour."""
+    delegate = managed_qobject(GraphDelegate(None))
+    option = QtWidgets.QStyleOptionViewItem()
+    option.palette = QtGui.QPalette()
+    option.state = QtWidgets.QStyle.State_MouseOver | QtWidgets.QStyle.State_Selected
+
+    brush = delegate.background_brush(option)
+
+    assert brush.color() == option.palette.highlight().color()
+
+
+def test_an_idle_row_paints_no_background(qapp, managed_qobject):
+    delegate = managed_qobject(GraphDelegate(None))
+    option = QtWidgets.QStyleOptionViewItem()
+    option.state = QtWidgets.QStyle.State_Enabled
+
+    assert delegate.background_brush(option) is None
 
 
 def test_history_widget_preserves_positional_parent_constructor_compatibility(
@@ -1973,7 +2070,7 @@ def test_reader_thread_emits_one_final_result_with_exact_repo_error(
         def get_worktree_commits(self):
             raise AssertionError('failed reads must not add pseudo-commits')
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', FakeReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', FakeReader)
     thread = managed_qobject(ReaderThread(app_context, request))
     results = QtTest.QSignalSpy(thread.result)
 
@@ -2003,7 +2100,7 @@ def test_reader_thread_uses_immutable_request_snapshot(
         def get_worktree_commits(self):
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', FakeReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', FakeReader)
     request = dag.HistoryRequest(3, 'HEAD', 10, False)
     thread = managed_qobject(ReaderThread(app_context, request))
     results = QtTest.QSignalSpy(thread.result)
@@ -2043,7 +2140,7 @@ def test_reader_thread_interruption_after_empty_read_skips_worktree(
             worktree_called.set()
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', BlockingEmptyReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', BlockingEmptyReader)
     request = dag.HistoryRequest(23, 'HEAD', 10, False)
     thread = managed_qobject(ReaderThread(app_context, request))
     results = QtTest.QSignalSpy(thread.result)
@@ -2104,7 +2201,7 @@ def _history(app_context, managed_qobject, monkeypatch):
     app_context.app.theme.selection_color.return_value = QtGui.QColor('#4488cc')
     app_context.app.theme.selection_color.return_value = QtGui.QColor('#4488cc')
     ManualReaderThread.instances = []
-    monkeypatch.setattr('cola.widgets.dag.ReaderThread', ManualReaderThread)
+    monkeypatch.setattr('fanta.widgets.dag.ReaderThread', ManualReaderThread)
     return managed_qobject(CommitHistoryWidget(app_context, ref='HEAD', count=1000))
 
 
@@ -2639,7 +2736,7 @@ def test_reader_thread_converts_exceptions_to_one_exact_failed_result(
                 raise RuntimeError(exception_text)
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', FakeReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', FakeReader)
     request = dag.HistoryRequest(17, 'HEAD', 10, False)
     thread = managed_qobject(ReaderThread(app_context, request))
     results = QtTest.QSignalSpy(thread.result)
@@ -2679,7 +2776,7 @@ def test_reader_thread_builds_empty_graph_once_in_worker(
         calls.append((threading.get_ident(), list(graph_input), head_oid))
         return real_build_graph(graph_input, head_oid=head_oid)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', EmptyReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', EmptyReader)
     monkeypatch.setattr(graph_model, 'build_graph', recording_build_graph)
     thread = managed_qobject(
         ReaderThread(app_context, dag.HistoryRequest(20, 'HEAD', 10, False))
@@ -2727,7 +2824,7 @@ def test_reader_thread_interruption_after_worktree_skips_graph(
         build_called.set()
         raise AssertionError((head_oid, 'graph phase must be skipped'))
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', WorktreeBlockingReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', WorktreeBlockingReader)
     monkeypatch.setattr(graph_model, 'build_graph', forbidden_build_graph)
     thread = managed_qobject(
         ReaderThread(app_context, dag.HistoryRequest(22, 'HEAD', 10, True))
@@ -2775,7 +2872,7 @@ def test_reader_thread_builds_graph_from_commits_and_status_pseudo_commits(
         calls.append((threading.get_ident(), graph_input, head_oid))
         return real_build_graph(graph_input, head_oid=head_oid)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', StatusReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', StatusReader)
     monkeypatch.setattr(graph_model, 'build_graph', recording_build_graph)
     thread = managed_qobject(
         ReaderThread(app_context, dag.HistoryRequest(24, 'HEAD', 10, True))
@@ -2826,7 +2923,7 @@ def test_reader_thread_emits_complete_multi_commit_tuple_and_has_no_add_signal(
         def get_worktree_commits(self):
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', FakeReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', FakeReader)
     thread = managed_qobject(
         ReaderThread(app_context, dag.HistoryRequest(21, 'HEAD', 10, False))
     )
@@ -2888,7 +2985,7 @@ def test_large_history_graph_is_built_once_in_worker_and_applied_atomically(
         build_calls.append((threading.get_ident(), list(graph_input), head_oid))
         return real_build_graph(graph_input, head_oid=head_oid)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', LargeReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', LargeReader)
     monkeypatch.setattr(graph_model, 'build_graph', recording_build_graph)
     app_context.settings.get_gui_state.return_value = {}
     app_context.app.theme.background_color_rgb.return_value = '#ffffff'
@@ -3091,7 +3188,7 @@ def test_partial_real_reader_outcomes_preserve_last_successful_view(
         def get_worktree_commits(self):
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', PartialReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', PartialReader)
     widget = _real_history(app_context, managed_qobject)
     existing_factory = dag.CommitFactory()
     existing = _commit(app_context, existing_factory, 'existing')
@@ -3186,7 +3283,7 @@ def test_deferred_delete_waits_for_real_blocked_reader(qapp, app_context, monkey
         def get_worktree_commits(self):
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', BlockingReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', BlockingReader)
     widget = CommitHistoryWidget(app_context)
     destroyed = QtTest.QSignalSpy(widget.destroyed)
     assert widget.request_history('active', 10, False)
@@ -3232,7 +3329,7 @@ def test_close_waits_for_real_blocked_reader_and_discards_pending(
         def get_worktree_commits(self):
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', BlockingReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', BlockingReader)
     widget = _real_history(app_context, managed_qobject)
     assert widget.request_history('active', 10, False)
     assert entered.wait(2)
@@ -3294,7 +3391,7 @@ def test_real_thread_stop_finalizes_once_and_queued_finished_is_noop(
         def get_worktree_commits(self):
             return (None, None)
 
-    monkeypatch.setattr('cola.widgets.dag.dag.RepoReader', BlockingReader)
+    monkeypatch.setattr('fanta.widgets.dag.dag.RepoReader', BlockingReader)
     widget = _real_history(app_context, managed_qobject)
     widget.request_history('active', 10, False)
     thread = widget.active_thread
@@ -4152,3 +4249,583 @@ def test_history_accepts_state_without_details_sizes(
 
     assert history.is_valid_state(state)
     assert history.apply_state(state)
+
+
+_CHIP_CONTRAST_FLOOR = 2.5
+
+
+def _demo_palette(base, alternate, text, highlight, highlighted_text):
+    palette = QtGui.QPalette()
+    palette.setColor(QtGui.QPalette.Base, QtGui.QColor(base))
+    palette.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor(alternate))
+    palette.setColor(QtGui.QPalette.Text, QtGui.QColor(text))
+    palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor(highlight))
+    palette.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor(highlighted_text))
+    return palette
+
+
+_DEMO_PALETTES = (
+    ('light', ('#ffffff', '#f2f2f2', '#101010', '#308cc6', '#ffffff')),
+    ('dark', ('#1e1e1e', '#252525', '#e8e8e8', '#2f6f9f', '#ffffff')),
+    ('solarized', ('#fdf6e3', '#eee8d5', '#657b83', '#268bd2', '#fdf6e3')),
+)
+
+
+@pytest.mark.parametrize(('name', 'colors'), _DEMO_PALETTES)
+def test_chip_fills_stay_readable_on_a_selected_row(qapp, name, colors):
+    """The reported bug: a chip must not vanish into the blue selected row."""
+    palette = _demo_palette(*colors)
+    style = inline_graph_style(palette)
+    selected = _opaque_color(palette.highlight().color())
+
+    for fill in (style.chip_other, style.chip_remote, style.chip_head):
+        readable = readable_chip_fill(fill, (selected,))
+        assert _color_contrast(readable, selected) >= _CHIP_CONTRAST_FLOOR, name
+
+
+@pytest.mark.parametrize(('name', 'colors'), _DEMO_PALETTES)
+def test_chip_fills_stay_readable_on_an_unselected_row(qapp, name, colors):
+    palette = _demo_palette(*colors)
+    style = inline_graph_style(palette)
+    base = _opaque_color(palette.base().color())
+
+    for fill in (style.chip_other, style.chip_remote, style.chip_head):
+        readable = readable_chip_fill(fill, (base,))
+        assert _color_contrast(readable, base) >= _CHIP_CONTRAST_FLOOR, name
+
+
+@pytest.mark.parametrize(('name', 'colors'), _DEMO_PALETTES)
+def test_chip_fills_keep_their_hues_apart(qapp, name, colors):
+    """Distinctness is a hue property - contrast ratio cannot see it (trap F4)."""
+    palette = _demo_palette(*colors)
+    style = inline_graph_style(palette)
+    selected = _opaque_color(palette.highlight().color())
+
+    hues = [
+        readable_chip_fill(fill, (selected,)).getHsvF()[0]
+        for fill in (style.chip_other, style.chip_remote, style.chip_head)
+    ]
+    # A grey reports hue -1.0; round the rest so float noise does not split
+    # two hues that are really the same.
+    distinct = {round(hue, 3) if hue >= 0.0 else -1.0 for hue in hues}
+
+    assert len(distinct) >= 2, name
+
+
+@pytest.mark.parametrize(
+    ('name', 'colors'),
+    _DEMO_PALETTES
+    + (('greyscale', ('#ffffff', '#eeeeee', '#000000', '#808080', '#ffffff')),),
+)
+def test_chip_fills_stay_three_distinct_colors(qapp, name, colors):
+    """Two chip kinds must never render in the same color (trap F13)."""
+    palette = _demo_palette(*colors)
+    style = inline_graph_style(palette)
+    fills = (style.chip_other, style.chip_remote, style.chip_head)
+
+    for background in (
+        _opaque_color(palette.highlight().color()),
+        _opaque_color(palette.base().color()),
+    ):
+        adapted = readable_chip_fills(fills, background)
+        assert len({color.rgba() for color in adapted}) == 3, name
+        for color in adapted:
+            assert _color_contrast(color, background) >= _CHIP_CONTRAST_FLOOR, name
+
+
+def test_readable_chip_fill_leaves_a_good_color_alone(qapp):
+    """No nudge when the fill already clears the floor - the design is kept."""
+    background = QtGui.QColor('#ffffff')
+    fill = QtGui.QColor('#404040')
+
+    assert readable_chip_fill(fill, (background,)) == fill
+
+
+def test_readable_chip_fill_preserves_the_hue(qapp):
+    """The nudge moves lightness, never hue."""
+    background = QtGui.QColor('#308cc6')
+    fill = QtGui.QColor('#62a8d4')
+
+    nudged = readable_chip_fill(fill, (background,))
+
+    assert nudged != fill
+    assert abs(nudged.getHsvF()[0] - fill.getHsvF()[0]) < 0.05
+
+
+def _candidate_commit(branches=(), tags=(), oid='a' * 40):
+    commit = dag.Commit(None, dag.CommitFactory(), oid=oid)
+    commit.branches = list(branches)
+    commit.tags = list(tags)
+    return commit
+
+
+@pytest.mark.parametrize(
+    ('scenario', 'branches', 'tags', 'expected'),
+    (
+        ('a local branch', ['feature'], ['heads/feature'], 'feature'),
+        ('the current branch is skipped', ['main'], ['heads/main'], ''),
+        (
+            'the first branch that is not current wins',
+            ['main', 'feature'],
+            ['heads/main', 'heads/feature'],
+            'feature',
+        ),
+        (
+            'a remote branch when there is no local one',
+            [],
+            ['remotes/origin/feature'],
+            'origin/feature',
+        ),
+        (
+            'a local branch beats a remote one',
+            ['feature'],
+            ['heads/feature', 'remotes/origin/other'],
+            'feature',
+        ),
+        ('a tag alone is not offered', [], ['tags/v1'], ''),
+        ('HEAD alone is not offered', [], ['HEAD'], ''),
+        ('nothing at all', [], [], ''),
+    ),
+)
+def test_merge_candidate_picks_one_ref(scenario, branches, tags, expected):
+    """One deterministic ref per row, local branches first."""
+    commit = _candidate_commit(branches, tags)
+
+    assert merge_candidate(commit, 'main') == expected, scenario
+
+
+@pytest.mark.parametrize('oid', (dag.STAGE, dag.WORKTREE))
+def test_merge_candidate_ignores_the_pseudo_commits(oid):
+    """STAGE and WORKTREE are not revisions and cannot be merged."""
+    commit = _candidate_commit(['feature'], ['heads/feature'], oid=oid)
+
+    assert merge_candidate(commit, 'main') == ''
+
+
+def test_merge_candidate_without_a_commit():
+    assert merge_candidate(None, 'main') == ''
+
+
+@pytest.mark.parametrize(
+    ('scenario', 'oid', 'expected'),
+    (
+        ('an object ID is abbreviated', 'a' * 40, 'aaaaaaaa'),
+        ('an ID shorter than the limit is kept', 'abc', 'abc'),
+        ('STAGE is not an object ID', dag.STAGE, ''),
+        ('WORKTREE is not an object ID', dag.WORKTREE, ''),
+        ('an empty ID', '', ''),
+        ('no ID at all', None, ''),
+    ),
+)
+def test_short_oid_abbreviates_only_real_object_ids(scenario, oid, expected):
+    """The pseudo-commits must not look like very short hashes."""
+    assert short_oid(oid, 8) == expected, scenario
+
+
+def test_the_history_shows_the_abbreviated_hash_in_its_own_column(
+    qapp, app_context, managed_qobject
+):
+    """The reported gap: the history never showed the commit hash."""
+    factory = dag.CommitFactory()
+    commit = _commit(app_context, factory, 'a' * 40)
+    tree = _tree(app_context, managed_qobject)
+
+    tree.add_commits([commit], _graph_result([commit]))
+
+    item = tree.topLevelItem(0)
+    assert tree.columnCount() == 4
+    assert tree.headerItem().text(CommitTreeWidgetItem.OID) == 'Hash'
+    assert item.text(CommitTreeWidgetItem.OID) == 'a' * tree.oid_length
+    assert item.text(CommitTreeWidgetItem.SUMMARY) == commit.summary
+    assert item.text(CommitTreeWidgetItem.AUTHOR) == commit.author
+    assert item.text(CommitTreeWidgetItem.DATE) == commit.authdate
+
+
+@pytest.mark.parametrize('oid', (dag.STAGE, dag.WORKTREE))
+def test_the_hash_column_stays_empty_for_the_pseudo_commits(
+    qapp, app_context, managed_qobject, oid
+):
+    """A row that is not a commit has no hash to show."""
+    factory = dag.CommitFactory()
+    commit = _commit(app_context, factory, oid)
+    tree = _tree(app_context, managed_qobject)
+
+    tree.add_commits([commit], _graph_result([commit]))
+
+    assert tree.topLevelItem(0).text(CommitTreeWidgetItem.OID) == ''
+
+
+def test_the_date_column_keeps_absorbing_the_slack(qapp, app_context, managed_qobject):
+    """The hash column must not become the one that grows with the window."""
+    tree = _tree(app_context, managed_qobject)
+
+    # DATE is the last section; Qt stretches it via stretchLastSection.
+    # The Hash column sits between Author and Date so all four splitters
+    # are greifbar - the previous order put Hash at the right end where
+    # the Stretch handle effectively froze the resize.
+    assert tree.header().stretchLastSection() is True
+    assert CommitTreeWidgetItem.DATE == tree.columnCount() - 1
+
+
+def test_the_chip_keeps_a_margin_around_its_text(qapp, app_context, managed_qobject):
+    """The reported defect: a descender such as 'g' touched the chip border."""
+    palette = _palette('#f4f5f7', '#202124', '#ffffff', '#edf0f4', '#3268b2', '#ffffff')
+    factory = dag.CommitFactory()
+    commit = _commit(app_context, factory, 'commit')
+    commit.tags = ['heads/g-branch']
+    tree = _tree(app_context, managed_qobject)
+    metrics = QtGui.QFontMetrics(tree.font())
+
+    painter = _draw_row_labels(tree, commit, palette)
+
+    chip = painter.rounded_rects[0]
+    assert GraphDelegate.LABEL_V_PADDING >= 2
+    assert GraphDelegate.LABEL_TEXT_OFFSET >= 4
+    assert chip.height() == metrics.height() + 2 * GraphDelegate.LABEL_V_PADDING
+    assert chip.width() == (
+        metrics.horizontalAdvance('g-branch') + 2 * GraphDelegate.LABEL_TEXT_OFFSET
+    )
+
+
+@pytest.mark.parametrize('point_size', (9, 12, 18, 24))
+def test_the_row_leaves_a_margin_around_the_chip_it_holds(
+    point_size, qapp, app_context, managed_qobject
+):
+    """At 11 pt and up the chip used to be exactly as tall as its own row.
+
+    paint() clips to option.rect, so a chip that fills the row loses its
+    rounded corners and overflows the top by a pixel.
+    """
+    factory = dag.CommitFactory()
+    commit = _commit(app_context, factory, 'commit')
+    commit.tags = ['heads/g-branch']
+    tree = _tree(app_context, managed_qobject)
+    tree.add_commits([commit], _graph_result([commit]))
+    option = QtWidgets.QStyleOptionViewItem()
+    option.font = QtGui.QFont(tree.font())
+    option.font.setPointSize(point_size)
+    option.fontMetrics = QtGui.QFontMetrics(option.font)
+
+    hint = tree.graph_delegate.sizeHint(
+        option, tree.indexFromItem(tree.topLevelItem(0), 0)
+    )
+
+    chip_height = option.fontMetrics.height() + 2 * GraphDelegate.LABEL_V_PADDING
+    assert GraphDelegate.ROW_V_MARGIN >= 2
+    assert hint.height() >= chip_height + 2 * GraphDelegate.ROW_V_MARGIN
+
+
+def _chip_fills(style):
+    return (style.chip_other, style.chip_remote, style.chip_tag, style.chip_head)
+
+
+@pytest.mark.parametrize(
+    'palette',
+    [
+        _palette('#f4f5f7', '#202124', '#ffffff', '#edf0f4', '#3268b2', '#ffffff'),
+        _palette('#202328', '#e8eaed', '#17191d', '#292d33', '#6ea8fe', '#101216'),
+    ],
+    ids=('light', 'dark'),
+)
+def test_a_tag_does_not_share_a_chip_color_with_anything(qapp, palette):
+    """A tag used to be painted exactly like the detached HEAD chip."""
+    style = inline_graph_style(palette)
+
+    fills = _chip_fills(style)
+
+    assert len({fill.rgba() for fill in fills}) == 4
+    assert style.chip_tag.getHsvF()[0] != style.chip_head.getHsvF()[0]
+
+
+@pytest.mark.parametrize('palette', _adversarial_chip_palettes())
+def test_four_chip_colors_stay_distinct_and_readable_on_any_row(qapp, palette):
+    """Adding a fourth color must not collapse the set on a hostile palette."""
+    style = inline_graph_style(palette)
+    fills = _chip_fills(style)
+
+    for background in (
+        _opaque_color(palette.highlight().color()),
+        _opaque_color(palette.base().color()),
+    ):
+        adapted = readable_chip_fills(fills, background)
+        assert len({color.rgba() for color in adapted}) == 4
+        for color in adapted:
+            assert _color_contrast(color, background) >= 2.5
+
+
+def test_each_ref_kind_gets_its_own_chip_color(qapp, app_context, managed_qobject):
+    """other -> fallback, HEAD -> its own, tags/ -> the tag color, heads/ -> branch."""
+    palette = _palette('#f4f5f7', '#202124', '#ffffff', '#edf0f4', '#3268b2', '#ffffff')
+    style = inline_graph_style(palette)
+    tree = _tree(app_context, managed_qobject)
+    painter = _TextRecordingPainter()
+
+    tree.graph_delegate._draw_labels(
+        painter,
+        13,
+        ['other', 'HEAD', 'tags/v1', 'heads/main'],
+        GraphDelegate.LANE_WIDTH + 8,
+        QtGui.QFontMetrics(tree.font()),
+        None,
+        style,
+    )
+
+    backgrounds = [background for _pen, background in painter.rounded_styles]
+    assert backgrounds == [
+        style.chip_remote,
+        style.chip_other,
+        style.chip_tag,
+        style.chip_head,
+    ]
+
+
+def test_a_tag_chip_is_marked_and_drawn_bold(qapp, app_context, managed_qobject):
+    """Color alone degrades on a greyscale theme; the glyph and weight do not."""
+    palette = _palette('#f4f5f7', '#202124', '#ffffff', '#edf0f4', '#3268b2', '#ffffff')
+    style = inline_graph_style(palette)
+    tree = _tree(app_context, managed_qobject)
+    font = QtGui.QFont(tree.font())
+    painter = _TextRecordingPainter()
+
+    tree.graph_delegate._draw_labels(
+        painter,
+        13,
+        ['tags/v1.0', 'heads/main'],
+        GraphDelegate.LANE_WIDTH + 8,
+        QtGui.QFontMetrics(font),
+        None,
+        style,
+        None,
+        None,
+        font,
+    )
+
+    assert GraphDelegate.TAG_MARKER == chr(0x2691) + ' '
+    assert [text for text, _color in painter.text_colors] == [
+        GraphDelegate.TAG_MARKER + 'v1.0',
+        'main',
+    ]
+    assert [label_font.bold() for label_font in painter.text_fonts] == [True, False]
+
+
+def test_a_branch_named_like_a_tag_is_not_marked(qapp, app_context, managed_qobject):
+    """The marker follows the ref prefix, never the name."""
+    palette = _palette('#f4f5f7', '#202124', '#ffffff', '#edf0f4', '#3268b2', '#ffffff')
+    factory = dag.CommitFactory()
+    commit = _commit(app_context, factory, 'commit')
+    commit.tags = ['heads/v1.0']
+    tree = _tree(app_context, managed_qobject)
+
+    painter = _draw_row_labels(tree, commit, palette)
+
+    assert [text for text, _color in painter.text_colors] == ['v1.0']
+
+
+def test_the_bold_tag_chip_and_its_hit_area_have_identical_boundaries(
+    qapp, app_context, managed_qobject
+):
+    """The bold advance has to reach the chip width and the hit test alike."""
+    factory = dag.CommitFactory()
+    commit = _commit(app_context, factory, 'commit')
+    commit.tags = ['tags/v1.0.0']
+    tree = _tree(app_context, managed_qobject)
+    tree.add_commits([commit], _graph_result([commit]))
+    item = tree.topLevelItem(0)
+    index = tree.indexFromItem(item, 0)
+    font = QtGui.QFont(tree.font())
+    font.setPointSize(18)
+    metrics = QtGui.QFontMetrics(font)
+    bold_font = QtGui.QFont(font)
+    bold_font.setBold(True)
+    option = QtWidgets.QStyleOptionViewItem()
+    option.font = font
+    option.fontMetrics = metrics
+    hint = tree.graph_delegate.sizeHint(option, index)
+    rect = QtCore.QRectF(0, 0, hint.width(), hint.height())
+    painter = _TextRecordingPainter()
+
+    tree.graph_delegate._draw_labels(
+        painter,
+        rect.center().y(),
+        commit.tags,
+        GraphDelegate.LANE_WIDTH + 8,
+        metrics,
+        item,
+        inline_graph_style(tree.palette()),
+        None,
+        None,
+        font,
+    )
+
+    chip = painter.rounded_rects[0]
+    marked = GraphDelegate.TAG_MARKER + 'v1.0.0'
+    assert QtGui.QFontMetrics(bold_font).horizontalAdvance(marked) > (
+        metrics.horizontalAdvance(marked)
+    )
+    assert chip.width() == (
+        QtGui.QFontMetrics(bold_font).horizontalAdvance(marked)
+        + 2 * GraphDelegate.LABEL_TEXT_OFFSET
+    )
+    for x in (chip.left() + 1, chip.right() - 1):
+        assert (
+            tree.graph_delegate._label_hit_test(
+                QtCore.QPointF(x, rect.center().y()), rect, metrics, index, item, font
+            )[0]
+            == 0
+        )
+    assert (
+        tree.graph_delegate._label_hit_test(
+            QtCore.QPointF(chip.right() + 2, rect.center().y()),
+            rect,
+            metrics,
+            index,
+            item,
+            font,
+        )[0]
+        == -1
+    )
+
+
+def _cache_palette(base, alternate, text, highlight, highlighted_text):
+    palette = QtGui.QPalette()
+    for role, color in (
+        (QtGui.QPalette.Base, base),
+        (QtGui.QPalette.AlternateBase, alternate),
+        (QtGui.QPalette.Text, text),
+        (QtGui.QPalette.Highlight, highlight),
+        (QtGui.QPalette.HighlightedText, highlighted_text),
+    ):
+        palette.setColor(role, QtGui.QColor(color))
+    return palette
+
+
+def test_an_equal_palette_reuses_the_same_style(qapp):
+    """The style was rebuilt once per painted row and cost 5.8 ms each time."""
+    palette = _cache_palette('#ffffff', '#edf0f4', '#202124', '#3268b2', '#ffffff')
+
+    first = inline_graph_style(palette)
+    second = inline_graph_style(QtGui.QPalette(palette))
+
+    assert first is second
+
+
+def test_a_changed_palette_produces_a_different_style(qapp):
+    """The key is the palette itself, so a theme change needs no invalidation."""
+    palette = _cache_palette('#ffffff', '#edf0f4', '#202124', '#3268b2', '#ffffff')
+    original = inline_graph_style(palette)
+    changed = QtGui.QPalette(palette)
+    changed.setColor(QtGui.QPalette.Highlight, QtGui.QColor('#a23872'))
+
+    updated = inline_graph_style(changed)
+
+    assert updated is not original
+    assert updated != original
+    assert inline_graph_style(palette) is original
+
+
+def test_an_invalid_color_does_not_share_a_key_with_black(qapp):
+    """Measured: QColor() and QColor(0, 0, 0) report the same rgba() (trap F2)."""
+    invalid = QtGui.QColor()
+    black = QtGui.QColor(0, 0, 0)
+    assert invalid.rgba() == black.rgba()
+    invalid_palette = _cache_palette(*[invalid] * 5)
+    black_palette = _cache_palette(*[black] * 5)
+
+    assert _palette_key(invalid_palette) != _palette_key(black_palette)
+    assert inline_graph_style(invalid_palette) is not inline_graph_style(black_palette)
+    assert inline_graph_style(invalid_palette) != inline_graph_style(black_palette)
+
+
+def test_the_style_cache_does_not_grow_without_bound(qapp):
+    """A bounded cache can only ever cost a recomputation, never a wrong answer."""
+    for step in range(dagwidget._INLINE_GRAPH_STYLE_CACHE_LIMIT * 3):
+        palette = _cache_palette(
+            QtGui.QColor(step % 256, 0, 0), '#edf0f4', '#202124', '#3268b2', '#ffffff'
+        )
+        assert inline_graph_style(palette).normal_fill.isValid()
+
+    assert (
+        len(dagwidget._INLINE_GRAPH_STYLE_CACHE)
+        <= dagwidget._INLINE_GRAPH_STYLE_CACHE_LIMIT
+    )
+
+
+def test_equal_chip_inputs_reuse_the_same_fills(qapp):
+    """readable_chip_fills ran once per painted row and measured 426 us."""
+    palette = _cache_palette('#ffffff', '#edf0f4', '#202124', '#3268b2', '#ffffff')
+    style = inline_graph_style(palette)
+    fills = (style.chip_other, style.chip_remote, style.chip_head)
+    background = palette.base().color()
+
+    first = readable_chip_fills(fills, background)
+    second = readable_chip_fills(
+        tuple(QtGui.QColor(fill) for fill in fills), background
+    )
+
+    assert first is second
+
+
+def test_a_different_row_background_gets_its_own_fills(qapp):
+    """The selected row is a different background and must not reuse the answer."""
+    palette = _cache_palette('#ffffff', '#edf0f4', '#202124', '#3268b2', '#ffffff')
+    style = inline_graph_style(palette)
+    fills = (style.chip_other, style.chip_remote, style.chip_head)
+
+    on_base = readable_chip_fills(fills, palette.base().color())
+    on_highlight = readable_chip_fills(fills, palette.highlight().color())
+
+    assert on_base is not on_highlight
+    assert [color.rgba() for color in on_base] != [
+        color.rgba() for color in on_highlight
+    ]
+
+
+def test_best_contrast_is_memoized_per_color_identity(qapp):
+    """_best_contrast runs once per chip per repaint and searches every candidate."""
+    candidates = (QtGui.QColor('#000000'), QtGui.QColor('#ffffff'))
+    background = (QtGui.QColor('#3268b2'),)
+
+    first = _best_contrast(candidates, background)
+    second = _best_contrast(
+        tuple(QtGui.QColor(color) for color in candidates),
+        (QtGui.QColor('#3268b2'),),
+    )
+
+    assert first is second
+    assert _best_contrast(candidates, (QtGui.QColor('#ffffff'),)) is not first
+
+
+def test_the_color_caches_do_not_grow_without_bound(qapp):
+    """Same rule as the style cache: bounded, and a miss only costs time."""
+    for step in range(dagwidget._COLOR_CACHE_LIMIT * 2):
+        background = QtGui.QColor(step % 256, 17, 42)
+        readable_chip_fills((QtGui.QColor('#808080'),), background)
+        _best_contrast((QtGui.QColor('#000000'),), (background,))
+
+    assert len(dagwidget._READABLE_CHIP_FILLS_CACHE) <= dagwidget._COLOR_CACHE_LIMIT
+    assert len(dagwidget._BEST_CONTRAST_CACHE) <= dagwidget._COLOR_CACHE_LIMIT
+
+
+def test_a_condensed_remote_keeps_visible_space_next_to_the_local(
+    qapp, app_context, managed_qobject
+):
+    """The remote marker and the local branch used to share pixels.
+
+    When origin and local point at the same commit, the row paints a
+    condensed 'origin/...' marker followed by a 'main' chip. _get_spacing
+    returned zero after any condensed entry, so the rounded corners of the
+    two chips sat flush against each other. There is now a font-independent
+    gap between them.
+    """
+    palette = _palette('#f4f5f7', '#202124', '#ffffff', '#edf0f4', '#3268b2', '#ffffff')
+    factory = dag.CommitFactory()
+    commit = _commit(app_context, factory, 'commit')
+    commit.tags = ['heads/main', 'remotes/origin/main']
+    tree = _tree(app_context, managed_qobject)
+
+    painter = _draw_row_labels(tree, commit, palette)
+
+    chips = sorted(painter.rounded_rects, key=lambda r: r.left())
+    assert len(chips) == 2
+    left, right = chips
+    assert right.left() - left.right() >= 1, (left, right)

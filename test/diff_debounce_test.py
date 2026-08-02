@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cola.widgets.diff import CommitDiffWidget
+from fanta.widgets.diff import CommitDiffWidget
 from qtpy import QtWidgets
 
 from .helper import app_context

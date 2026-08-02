@@ -7,12 +7,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cola import icons
-from cola.models import dag
-from cola.widgets.filelist import FileTreeWidgetItem
-from cola.widgets.filelist import FileWidget
-from cola.widgets.filelist import merge_numstat_rows
-from cola.widgets.filelist import parse_status_and_numstat
+from fanta import icons
+from fanta import qtcompat
+from fanta.models import dag
+from fanta.widgets.filelist import FileTreeWidgetItem
+from fanta.widgets.filelist import FileWidget
+from fanta.widgets.filelist import merge_numstat_rows
+from fanta.widgets.filelist import parse_status_and_numstat
 from qtpy import QtCore
 from qtpy import QtWidgets
 
@@ -170,6 +171,28 @@ def test_new_widget_starts_without_commits(qapp, app_context, managed_qobject):
     widget = managed_qobject(FileWidget(app_context, None))
 
     assert widget.commits == []
+
+
+def test_the_file_list_is_covered_by_the_item_view_rules(qapp):
+    """The reported hover problem was not specific to the history table.
+
+    QAbstractItemView::item covers every tree and list, so the file list needs
+    no rules of its own -- but nothing said so, and a later per-widget
+    stylesheet would silently take it back out.
+    """
+    from fanta import themes
+
+    style_sheet = themes.style_sheet_default(qapp.palette(), bold_fonts=False)
+
+    assert issubclass(FileWidget, QtWidgets.QAbstractItemView)
+    assert 'QAbstractItemView::item:hover' in style_sheet
+
+
+def test_the_file_list_has_no_stylesheet_of_its_own(qapp, managed_qobject):
+    """A per-widget stylesheet would override the application-wide rules."""
+    widget = managed_qobject(FileWidget(None, None))
+
+    assert widget.styleSheet() == ''
 
 
 def _double_click_first_item(widget):
@@ -486,3 +509,38 @@ def test_one_git_show_serves_the_whole_selection(
 
     assert len(calls) == 1
     assert list(calls[0]) == selection
+
+
+def test_the_file_status_icon_resolves_through_the_icon_search_path(qapp):
+    """The reported defect: every status icon in the file panel was missing.
+
+    icons.from_name() wants an "icons:"-prefixed name; handed a bare basename
+    it asks Qt for a path relative to the process working directory, which is
+    the repository the user opened. This is the one test in the suite that
+    registers the icon search path, so it has to put it back afterwards - and
+    icons.from_name is memoized, so its cache has to go too.
+    """
+    icons.install(['default'])
+    icons.from_name.cache.clear()
+    try:
+        item = FileTreeWidgetItem('12\t0\tsrc/main.py')
+        item.set_status('A')
+
+        assert not item.icon(0).pixmap(16, 16).isNull()
+    finally:
+        qtcompat.set_search_paths('icons', [])
+        icons.from_name.cache.clear()
+
+
+@pytest.mark.parametrize('status', ('A', 'D', 'M', 'T', 'R', 'C', ''))
+def test_every_status_code_maps_to_an_asset_that_exists(qapp, status):
+    """A basename with no file behind it fails silently at paint time."""
+    icons.install(['default'])
+    icons.from_name.cache.clear()
+    try:
+        basename = icons.diff_status_basename(status, 'src/main.py')
+
+        assert not icons.icon(basename).pixmap(16, 16).isNull(), basename
+    finally:
+        qtcompat.set_search_paths('icons', [])
+        icons.from_name.cache.clear()
