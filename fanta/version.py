@@ -81,7 +81,7 @@ def version() -> str:
 
 
 def builtin_version() -> str:
-    """Returns the version recorded in cola/_version.py"""
+    """Return the built-in fallback version."""
     return VERSION
 
 

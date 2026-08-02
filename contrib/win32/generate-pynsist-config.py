@@ -8,8 +8,8 @@ rewriting both hands pynsist a py_version of 1.0.0 and fails the build.
 
 Usage: generate-pynsist-config.py <input.cfg> <output.cfg>
 
-The version comes from fanta/_version.py, the single source of truth that
-test/version_test.py holds pyproject.toml and pynsist.cfg to.
+The release workflow writes the Git tag version temporarily to
+fanta/_version.py before packaging.
 """
 from __future__ import annotations
 import pathlib
@@ -22,11 +22,14 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 def application_version() -> str:
     """Read VERSION out of fanta/_version.py."""
     text = (REPO_ROOT / 'fanta' / '_version.py').read_text(encoding='utf-8')
-    match = re.search(r"^VERSION\s*=\s*'([^']+)'", text, re.MULTILINE)
+    match = re.search(
+        r"""^VERSION\s*=\s*(['"])([^'"]+)\1\s*$""",
+        text,
+        re.MULTILINE,
+    )
     if not match:
         raise SystemExit('fanta/_version.py has no VERSION assignment')
-    return match.group(1)
-
+    return match.group(2)
 
 def substitute(config: str, version: str) -> str:
     """Return `config` with [Application] version set to `version`.
