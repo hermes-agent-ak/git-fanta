@@ -1,70 +1,155 @@
 name: Release
 
-# Publishes a GitHub Release from a v* tag. Nothing here uploads to PyPI and
-# nothing is code-signed or notarized: that needs certificates this repository
-# does not hold, so the macOS bundle and the Windows installer are unsigned and
-# users will see the corresponding warnings.
+# Manual runs build test artifacts only.
+# Pushing a v* tag builds the same artifacts and publishes a GitHub Release.
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without the leading v, for example 1.0.1"
+        required: true
+        default: "1.0.1"
+        type: string
   push:
     tags:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   check-version:
     name: Check version
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release-version.outputs.version }}
+      tag: ${{ steps.release-version.outputs.tag }}
+
     steps:
       - uses: actions/checkout@v7
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      # A tag that disagrees with fanta/_version.py produces artifacts whose
-      # reported version is not the one people downloaded.
-      - name: The tag must match fanta/_version.py
+
+      - name: Verify all release versions
+        id: release-version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_VERSION: ${{ inputs.version }}
         run: |
-          set -eu
-          tag="${GITHUB_REF_NAME#v}"
-          version=$(python3 -c "
-          import re, pathlib
-          text = pathlib.Path('fanta/_version.py').read_text()
-          print(re.search(r\"VERSION\s*=\s*'([^']+)'\", text).group(1))
-          ")
-          echo "tag=$tag version=$version"
-          test "$tag" = "$version"
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            requested="$MANUAL_VERSION"
+          else
+            requested="${GITHUB_REF_NAME#v}"
+          fi
+
+          echo "$requested" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+            echo "Version must look like 1.0.1"
+            exit 1
+          }
+
+          python3 - "$requested" <<'PY'
+          import configparser
+          import pathlib
+          import re
+          import sys
+          import tomllib
+
+          requested = sys.argv[1]
+
+          version_text = pathlib.Path("fanta/_version.py").read_text(
+              encoding="utf-8"
+          )
+          match = re.search(
+              r"VERSION\s*=\s*['\"]([^'\"]+)['\"]",
+              version_text,
+          )
+          if not match:
+              raise SystemExit(
+                  "Could not read VERSION from fanta/_version.py"
+              )
+
+          pyproject = tomllib.loads(
+              pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
+          )
+
+          pynsist = configparser.ConfigParser()
+          pynsist.read("pynsist.cfg", encoding="utf-8")
+
+          versions = {
+              "requested": requested,
+              "fanta/_version.py": match.group(1),
+              "pyproject.toml": pyproject[
+                  "tool"
+              ]["setuptools_scm"]["fallback_version"],
+              "pynsist.cfg": pynsist["Application"]["version"],
+          }
+
+          for source, value in versions.items():
+              print(f"{source}: {value}")
+
+          mismatches = {
+              source: value
+              for source, value in versions.items()
+              if value != requested
+          }
+          if mismatches:
+              raise SystemExit(
+                  "Version mismatch. All displayed versions must match."
+              )
+          PY
+
+          echo "version=$requested" >>"$GITHUB_OUTPUT"
+          echo "tag=v$requested" >>"$GITHUB_OUTPUT"
 
   sdist-wheel:
     name: sdist + wheel
     needs: check-version
     runs-on: ubuntu-latest
+    env:
+      SETUPTOOLS_SCM_PRETEND_VERSION_FOR_GIT_FANTA: ${{ needs.check-version.outputs.version }}
+
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
       - name: Build
         run: |
+          set -euo pipefail
           python -m pip install --upgrade build
           python -m build
+          ls -lah dist
+
       - uses: actions/upload-artifact@v7
         with:
           name: dist-python
           path: dist/*
+          retention-days: 7
 
   windows-installer:
     name: Windows installer
     needs: check-version
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.check-version.outputs.tag }}
+      SETUPTOOLS_SCM_PRETEND_VERSION_FOR_GIT_FANTA: ${{ needs.check-version.outputs.version }}
+
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
       - name: Install system dependencies
         run: |
+          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y \
             nsis \
@@ -73,91 +158,363 @@ jobs:
             python3-pyqt6.qtsvg \
             python3-pyqt6.qtwebengine \
             python3-send2trash
+
       - name: Install Rust and Garden
         run: |
+          set -euo pipefail
           rustup toolchain install stable --profile minimal --no-self-update
           cargo install garden-tools
+
       - name: Install pip-provided dependencies
         run: |
+          set -euo pipefail
           garden dev/virtualenv -vv -D pip-upgrade=true
           garden dev -vv
+
       - name: Build the installer
         run: |
-          rm -fr build
+          set -euo pipefail
+          rm -rf build
           garden pynsist -vv
-          mv build/nsis/git-fanta*.exe "git-fanta-${GITHUB_REF_NAME}-installer.exe"
+          mv build/nsis/git-fanta*.exe \
+            "git-fanta-${RELEASE_TAG}-windows-x86_64-installer.exe"
+          ls -lah git-fanta-*.exe
+
       - uses: actions/upload-artifact@v7
         with:
           name: dist-windows
-          path: git-fanta-*-installer.exe
+          path: git-fanta-*-windows-x86_64-installer.exe
+          retention-days: 7
+
+  linux-appimage:
+    name: Linux AppImage + portable archive
+    needs: check-version
+    runs-on: ubuntu-22.04
+    env:
+      RELEASE_VERSION: ${{ needs.check-version.outputs.version }}
+      RELEASE_TAG: ${{ needs.check-version.outputs.tag }}
+      SETUPTOOLS_SCM_PRETEND_VERSION_FOR_GIT_FANTA: ${{ needs.check-version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Linux build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            curl \
+            desktop-file-utils \
+            file \
+            libegl1 \
+            libgl1 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0
+
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller
+          python -m pip install '.[extras,pyqt6]'
+
+      - name: Validate the desktop file
+        run: |
+          set -euo pipefail
+          desktop-file-validate share/applications/git-fanta.desktop
+
+      - name: Create PyInstaller entry points
+        run: |
+          set -euo pipefail
+
+          cat >pyinstaller-main.py <<'PY'
+          from fanta.main import main
+
+          raise SystemExit(main())
+          PY
+
+          cat >pyinstaller-dag.py <<'PY'
+          from fanta.dag import main
+
+          raise SystemExit(main())
+          PY
+
+          cat >pyinstaller-sequence-editor.py <<'PY'
+          from fanta.sequenceeditor import main
+
+          raise SystemExit(main())
+          PY
+
+      - name: Build the standalone Linux applications
+        run: |
+          set -euo pipefail
+
+          common_args=(
+            --noconfirm
+            --clean
+            --onedir
+            --collect-all fanta
+            --collect-all qtpy
+            --copy-metadata git-fanta
+            --hidden-import PyQt6.QtSvg
+          )
+
+          pyinstaller \
+            "${common_args[@]}" \
+            --name git-fanta \
+            pyinstaller-main.py
+
+          pyinstaller \
+            "${common_args[@]}" \
+            --name git-fanta-dag \
+            pyinstaller-dag.py
+
+          pyinstaller \
+            "${common_args[@]}" \
+            --name git-fanta-sequence-editor \
+            pyinstaller-sequence-editor.py
+
+          # Git Fanta starts the DAG and sequence editor as sibling commands.
+          # Merge all three PyInstaller directories into one portable tree.
+          cp -a dist/git-fanta-dag/. dist/git-fanta/
+          cp -a dist/git-fanta-sequence-editor/. dist/git-fanta/
+
+          test -x dist/git-fanta/git-fanta
+          test -x dist/git-fanta/git-fanta-dag
+          test -x dist/git-fanta/git-fanta-sequence-editor
+
+          actual_version="$(
+            QT_QPA_PLATFORM=offscreen \
+            dist/git-fanta/git-fanta version --brief
+          )"
+
+          echo "Built version: $actual_version"
+          test "$actual_version" = "$RELEASE_VERSION"
+
+          QT_QPA_PLATFORM=offscreen \
+            dist/git-fanta/git-fanta-dag --help >/dev/null
+
+          QT_QPA_PLATFORM=offscreen \
+            dist/git-fanta/git-fanta-sequence-editor --help >/dev/null
+
+      - name: Build the portable tar.gz
+        run: |
+          set -euo pipefail
+
+          mkdir -p portable
+          cp -a dist/git-fanta portable/git-fanta
+
+          cat >portable/README.txt <<'TXT'
+          Git Fanta portable Linux build
+
+          Requirements:
+          - x86_64 Linux
+          - Git installed and available on PATH
+
+          Start:
+              ./git-fanta/git-fanta
+
+          Git Fanta installs and runs separately from git-cola.
+          TXT
+
+          tar \
+            -C portable \
+            -czf "git-fanta-${RELEASE_TAG}-linux-x86_64.tar.gz" \
+            git-fanta README.txt
+
+      - name: Build the AppDir
+        run: |
+          set -euo pipefail
+
+          mkdir -p \
+            AppDir/usr/lib \
+            AppDir/usr/bin \
+            AppDir/usr/share/applications \
+            AppDir/usr/share/icons/hicolor/scalable/apps
+
+          cp -a dist/git-fanta AppDir/usr/lib/git-fanta
+
+          ln -s ../lib/git-fanta/git-fanta \
+            AppDir/usr/bin/git-fanta
+          ln -s ../lib/git-fanta/git-fanta-dag \
+            AppDir/usr/bin/git-fanta-dag
+          ln -s ../lib/git-fanta/git-fanta-sequence-editor \
+            AppDir/usr/bin/git-fanta-sequence-editor
+
+          cp share/applications/git-fanta.desktop \
+            AppDir/usr/share/applications/git-fanta.desktop
+          cp fanta/icons/git-fanta.svg \
+            AppDir/usr/share/icons/hicolor/scalable/apps/git-fanta.svg
+
+          cp share/applications/git-fanta.desktop \
+            AppDir/git-fanta.desktop
+          cp fanta/icons/git-fanta.svg \
+            AppDir/git-fanta.svg
+
+          cat >AppDir/AppRun <<'SH'
+          #!/bin/sh
+          set -eu
+
+          HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+          export PATH="$HERE/usr/bin:$PATH"
+
+          exec "$HERE/usr/bin/git-fanta" "$@"
+          SH
+
+          chmod +x AppDir/AppRun
+
+      - name: Build and test the AppImage
+        run: |
+          set -euo pipefail
+
+          curl -L \
+            --fail \
+            --retry 3 \
+            -o appimagetool.AppImage \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+
+          chmod +x appimagetool.AppImage
+
+          ARCH=x86_64 \
+          APPIMAGE_EXTRACT_AND_RUN=1 \
+          ./appimagetool.AppImage \
+            AppDir \
+            "git-fanta-${RELEASE_TAG}-linux-x86_64.AppImage"
+
+          chmod +x \
+            "git-fanta-${RELEASE_TAG}-linux-x86_64.AppImage"
+
+          actual_version="$(
+            APPIMAGE_EXTRACT_AND_RUN=1 \
+            QT_QPA_PLATFORM=offscreen \
+            "./git-fanta-${RELEASE_TAG}-linux-x86_64.AppImage" \
+            version --brief
+          )"
+
+          echo "AppImage version: $actual_version"
+          test "$actual_version" = "$RELEASE_VERSION"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-linux
+          path: |
+            git-fanta-*-linux-x86_64.AppImage
+            git-fanta-*-linux-x86_64.tar.gz
+          retention-days: 7
 
   macos-app:
     name: macOS app
     needs: check-version
     runs-on: macos-latest
+    env:
+      RELEASE_TAG: ${{ needs.check-version.outputs.tag }}
+      SETUPTOOLS_SCM_PRETEND_VERSION_FOR_GIT_FANTA: ${{ needs.check-version.outputs.version }}
+
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
       - name: Install dependencies
         run: |
+          set -euo pipefail
           brew untap aws/tap || true
           brew install git
+
       - name: Install Rust and Garden
         run: |
+          set -euo pipefail
           rustup toolchain install stable --profile minimal --no-self-update
           cargo install garden-tools
+
       - name: Build the app bundle
-        run: garden macos/app -vv -D cola-app='${TREE_PATH}/local/git-fanta.app'
+        run: |
+          set -euo pipefail
+          garden macos/app -vv \
+            -D cola-app='${TREE_PATH}/local/git-fanta.app'
+
       - name: Zip the bundle
         run: |
+          set -euo pipefail
           cd local
-          zip -qry "../git-fanta-${GITHUB_REF_NAME}-macos.zip" git-fanta.app
+          zip -qry \
+            "../git-fanta-${RELEASE_TAG}-macos.zip" \
+            git-fanta.app
+
       - uses: actions/upload-artifact@v7
         with:
           name: dist-macos
           path: git-fanta-*-macos.zip
+          retention-days: 7
 
   publish:
     name: Publish GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs:
+      - check-version
       - sdist-wheel
       - windows-installer
+      - linux-appimage
       - macos-app
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
       - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v6
         with:
           path: artifacts
           pattern: dist-*
           merge-multiple: true
-      - name: Checksums
+
+      - name: Create checksums
         run: |
+          set -euo pipefail
           cd artifacts
           sha256sum * >SHA256SUMS
           cat SHA256SUMS
-      - name: Release notes
+
+      - name: Create release notes
         run: |
           cat >notes.md <<'NOTES'
-          The downloads below are **unsigned**: macOS needs
-          `xattr -dr com.apple.quarantine git-fanta.app` before the app will
-          start, and Windows SmartScreen warns on first run. Check what you
-          downloaded against `SHA256SUMS`.
+          ## Downloads
 
-          Git Fanta installs alongside git-cola: nothing in this release
-          touches an existing installation of it.
+          - Windows: download and run the `windows-x86_64-installer.exe`.
+          - Linux: download the `.AppImage`, make it executable and start it.
+          - Linux portable: extract the `linux-x86_64.tar.gz` archive.
+          - macOS: extract the macOS ZIP.
+
+          The Windows installer and macOS application are currently unsigned.
+          Windows SmartScreen or macOS Gatekeeper may therefore show a warning.
+
+          Verify downloads with `SHA256SUMS`.
+
+          Git Fanta installs alongside git-cola and does not overwrite it.
           NOTES
+
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.check-version.outputs.tag }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "Git Fanta $GITHUB_REF_NAME" \
+          set -euo pipefail
+
+          gh release create "$RELEASE_TAG" \
+            --title "Git Fanta $RELEASE_TAG" \
             --notes-file notes.md \
             --generate-notes \
             --verify-tag
-          gh release upload "$GITHUB_REF_NAME" artifacts/* --clobber
+
+          gh release upload \
+            "$RELEASE_TAG" \
+            artifacts/* \
+            --clobber
