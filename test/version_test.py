@@ -68,6 +68,11 @@ def _generator():
     spec.loader.exec_module(module)
     return module
 
+def test_the_generator_reads_the_fallback_version():
+    """The Windows config generator accepts the generated version file."""
+    generator = _generator()
+
+    assert generator.application_version() == _builtin_version()
 
 def test_the_version_is_the_forks_own():
     """4.x is the upstream numbering; this fork started its own at 1.0.0."""
