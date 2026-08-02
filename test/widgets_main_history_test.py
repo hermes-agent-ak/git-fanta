@@ -312,6 +312,77 @@ def test_real_legacy_v2_state_preserves_existing_docks_and_reveals_history(
     assert _history_is_active(window.historydock)
 
 
+def test_the_default_layout_puts_history_and_branches_side_by_side(
+    qapp, main_context, managed_qobject
+):
+    """A fresh install gets the maintainer's arrangement, not the inherited one.
+
+    Existing users keep their saved layout: apply_state() only overrides the
+    arrangement when a windowstate was stored.
+    """
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+
+    top = QtCore.Qt.TopDockWidgetArea
+    bottom = QtCore.Qt.BottomDockWidgetArea
+
+    assert window.dockWidgetArea(window.historydock) == top
+    assert window.dockWidgetArea(window.branchdock) == top
+    assert window.dockWidgetArea(window.statusdock) == bottom
+    assert window.dockWidgetArea(window.diffdock) == bottom
+    assert window.dockWidgetArea(window.commitdock) == bottom
+
+
+def test_the_default_layout_does_not_tab_history_behind_anything(
+    qapp, main_context, managed_qobject
+):
+    """History is the largest pane; a tab would hide it behind Branches."""
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+
+    assert window.tabifiedDockWidgets(window.historydock) == []
+    assert window.historydock.isVisible()
+
+
+def test_the_default_layout_gives_history_the_most_room(
+    qapp, main_context, managed_qobject
+):
+    """History is the pane the maintainer works in; it gets the largest share.
+
+    Compare against the live geometry, never against pixel constants: the
+    offscreen platform and a real desktop lay out at different sizes.
+    """
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+    qapp.processEvents()
+
+    assert window.historydock.width() > window.branchdock.width()
+    assert window.historydock.height() > window.statusdock.height()
+
+
+def test_the_bottom_row_stays_draggable(qapp, main_context, managed_qobject):
+    """The initial height cap must be lifted, or the splitter is stuck."""
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+    qapp.processEvents()
+    QtTest.QTest.qWait(10)
+    qapp.processEvents()
+
+    for dock in (window.statusdock, window.diffdock, window.commitdock):
+        assert dock.widget().maximumHeight() >= defs.max_size
+
+
+def test_the_default_layout_keeps_actions_and_log_hidden(
+    qapp, main_context, managed_qobject
+):
+    """Characterization: these two were hidden before and stay hidden."""
+    window = managed_qobject(MainView(main_context))
+    _show(qapp, window)
+
+    assert not window.actionsdock.isVisible()
+    assert not window.logdock.isVisible()
+
+
 def test_mainview_has_exactly_one_dock_owned_history_widget(
     qapp, main_context, managed_qobject
 ):
