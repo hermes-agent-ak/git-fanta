@@ -24,6 +24,7 @@ def _builtin_version():
     assert match, 'fanta/_version.py has no VERSION assignment'
     return match.group(2)
 
+
 def _pyproject_fallback_version():
     """setuptools_scm uses this whenever no tag describes the checkout."""
     text = (REPO_ROOT / 'pyproject.toml').read_text(encoding='utf-8')
@@ -68,11 +69,13 @@ def _generator():
     spec.loader.exec_module(module)
     return module
 
+
 def test_the_generator_reads_the_fallback_version():
     """The Windows config generator accepts the generated version file."""
     generator = _generator()
 
     assert generator.application_version() == _builtin_version()
+
 
 def test_the_version_is_the_forks_own():
     """4.x is the upstream numbering; this fork started its own at 1.0.0."""
@@ -90,6 +93,7 @@ def test_repository_uses_neutral_version_placeholders():
     assert _builtin_version() == '0.0.0'
     assert _pyproject_fallback_version() == '0.0.0'
     assert _pynsist_version() == '0.0.0'
+
 
 def test_the_version_is_a_release_number():
     version = _builtin_version()
@@ -220,6 +224,6 @@ def test_the_appstream_metadata_has_valid_release_versions():
                 version,
             ), f'{name} contains invalid release version {version!r}'
 
-        assert versions[0] != '0.0.0', (
-            f'{name} uses the neutral build placeholder as a real release'
-        )
+        assert (
+            versions[0] != '0.0.0'
+        ), f'{name} uses the neutral build placeholder as a real release'
