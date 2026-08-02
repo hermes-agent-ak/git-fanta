@@ -317,7 +317,7 @@ jobs:
           Start:
               ./git-fanta/git-fanta
 
-          Git Fanta installs and runs separately from git-cola.
+          Git Fanta uses its own application files and configuration.
           TXT
 
           tar \
