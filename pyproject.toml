@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.2", "setuptools_scm[toml]>=6.0"]
+requires = ["setuptools>=80", "setuptools_scm[toml]>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -113,10 +113,10 @@ fanta = [
 ]
 
 [tool.setuptools_scm]
-# Used when no tag describes the checkout, e.g. on a branch that does not
-# descend from a release tag or in a source tarball without .git. Keep this
-# in sync with fanta/_version.py -- test/version_test.py enforces it.
-fallback_version = "1.0.1"
+version_file = "fanta/_scm_version.py"
+write_to_source = true
+fallback_version = "0.0.0"
+tag_regex = '^v(?P<version>\d+\.\d+\.\d+)$'
 
 [tool.mypy]
 python_version = "3.9"

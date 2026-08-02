@@ -79,11 +79,9 @@ def version() -> str:
         return metadata_version
     return pkg_version
 
-
 def builtin_version() -> str:
-    """Returns the version recorded in cola/_version.py"""
+    """Return the built-in fallback version."""
     return VERSION
-
 
 @memoize
 def check_version(min_ver: str, ver: str) -> bool:

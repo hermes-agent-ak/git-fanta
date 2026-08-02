@@ -14,12 +14,15 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def _builtin_version():
-    """Read VERSION out of fanta/_version.py, the single source of truth."""
+    """Read the committed fallback version from fanta/_version.py."""
     text = (REPO_ROOT / 'fanta' / '_version.py').read_text(encoding='utf-8')
-    match = re.search(r"^VERSION\s*=\s*'([^']+)'", text, re.MULTILINE)
+    match = re.search(
+        r"""^VERSION\s*=\s*(['"])([^'"]+)\1\s*$""",
+        text,
+        re.MULTILINE,
+    )
     assert match, 'fanta/_version.py has no VERSION assignment'
-    return match.group(1)
-
+    return match.group(2)
 
 def _pyproject_fallback_version():
     """setuptools_scm uses this whenever no tag describes the checkout."""
@@ -77,13 +80,11 @@ def test_the_version_is_the_forks_own():
     )
 
 
-def test_the_packaging_files_agree_on_the_version():
-    """A build must not report a different version depending on how it was made."""
-    version = _builtin_version()
-
-    assert _pyproject_fallback_version() == version
-    assert _pynsist_version() == version
-
+def test_repository_uses_neutral_version_placeholders():
+    """Release versions come from Git tags, not committed version literals."""
+    assert _builtin_version() == '0.0.0'
+    assert _pyproject_fallback_version() == '0.0.0'
+    assert _pynsist_version() == '0.0.0'
 
 def test_the_version_is_a_release_number():
     version = _builtin_version()
@@ -199,11 +200,21 @@ def _appstream_versions():
     return versions
 
 
-def test_the_appstream_metadata_lists_this_version():
-    """A software centre showing a different version is a fourth source of truth."""
-    version = _builtin_version()
+def test_the_appstream_metadata_has_valid_release_versions():
+    """AppStream contains real releases, not the neutral build placeholder."""
     per_file = _appstream_versions()
 
     assert per_file, 'no AppStream metainfo files found'
+
     for name, versions in per_file.items():
-        assert versions[0] == version, f'{name} newest release is {versions[0]}'
+        assert versions, f'{name} contains no releases'
+
+        for version in versions:
+            assert re.fullmatch(
+                r'\d+\.\d+\.\d+',
+                version,
+            ), f'{name} contains invalid release version {version!r}'
+
+        assert versions[0] != '0.0.0', (
+            f'{name} uses the neutral build placeholder as a real release'
+        )

@@ -35,6 +35,7 @@ __pycache__
 
 # Hermes Agent working state
 /.hermes
-
+# Generated automatically by setuptools-scm
+fanta/_scm_version.py
 # Backup files from plan iterations
 *.bak
