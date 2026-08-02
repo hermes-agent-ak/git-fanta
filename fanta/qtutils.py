@@ -1460,6 +1460,16 @@ def rgb_css(color: QtGui.QColor) -> str:
     return '#%s' % rgb_hex(color)
 
 
+def rgba_css(color: QtGui.QColor) -> str:
+    """Convert a QColor into an rgba CSS string"""
+    return 'rgba(%d, %d, %d, %d)' % (
+        color.red(),
+        color.green(),
+        color.blue(),
+        color.alpha(),
+    )
+
+
 def rgb_hex(color: QtGui.QColor) -> str:
     """Convert a QColor into a hex aabbcc string"""
     return f'{color.red():02x}{color.green():02x}{color.blue():02x}'
