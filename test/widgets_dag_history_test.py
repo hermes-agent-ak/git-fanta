@@ -1400,6 +1400,59 @@ def test_display_inline_graph_installs_and_removes_delegate(
     assert tree.itemDelegateForColumn(0) is None
 
 
+def test_the_history_filter_row_is_readable(qapp, app_context, managed_qobject):
+    """The revision field and the count both need room for their text.
+
+    standard.SpinBox sizes itself from a digit count, and passing digits=None
+    turns that off -- on Windows the number then touches the spin buttons.
+    """
+    widget = managed_qobject(CommitHistoryWidget(app_context))
+    widget.show()
+    qapp.processEvents()
+
+    line_height = widget.revtext.fontMetrics().height()
+
+    assert widget.maxresults.minimumWidth() > 0
+    assert widget.revtext.minimumHeight() >= line_height
+    assert widget.maxresults.minimumHeight() >= line_height
+
+
+def test_the_graph_delegate_paints_hover_like_the_other_columns(
+    qapp, app_context, managed_qobject
+):
+    """Only the Summary column uses GraphDelegate; the rest use the default one.
+
+    The tree has mouse tracking on for label hit-testing, so hovering a row
+    sets State_MouseOver. The default delegate paints that and GraphDelegate
+    did not, which lit up Author, Hash and Date but not Summary.
+    """
+    delegate = managed_qobject(GraphDelegate(None))
+    option = QtWidgets.QStyleOptionViewItem()
+    option.state = QtWidgets.QStyle.State_MouseOver
+
+    assert delegate.background_brush(option) is not None
+
+
+def test_selection_wins_over_hover(qapp, managed_qobject):
+    """A hovered *and* selected row must not paint the hover colour."""
+    delegate = managed_qobject(GraphDelegate(None))
+    option = QtWidgets.QStyleOptionViewItem()
+    option.palette = QtGui.QPalette()
+    option.state = QtWidgets.QStyle.State_MouseOver | QtWidgets.QStyle.State_Selected
+
+    brush = delegate.background_brush(option)
+
+    assert brush.color() == option.palette.highlight().color()
+
+
+def test_an_idle_row_paints_no_background(qapp, managed_qobject):
+    delegate = managed_qobject(GraphDelegate(None))
+    option = QtWidgets.QStyleOptionViewItem()
+    option.state = QtWidgets.QStyle.State_Enabled
+
+    assert delegate.background_brush(option) is None
+
+
 def test_history_widget_preserves_positional_parent_constructor_compatibility(
     qapp, app_context, managed_qobject
 ):

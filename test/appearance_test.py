@@ -66,6 +66,55 @@ def test_refresh_system_appearance_skips_non_default_theme():
     cola._install_style.assert_not_called()
 
 
+def test_the_default_theme_styles_item_views():
+    """Without these rules the platform style paints items.
+
+    windowsvista insets the selection inside the item rect, draws a dotted
+    focus rectangle and paints a hover gradient; Fusion and Breeze do none of
+    that. The Flat themes already carry the same three rules
+    (fanta/themes.py), so this makes the Default theme agree with them.
+    """
+    from fanta import themes
+
+    palette = _make_palette(dark=False)
+    style_sheet = themes.style_sheet_default(palette, bold_fonts=False)
+
+    assert 'QAbstractItemView::item:selected' in style_sheet
+    assert 'QAbstractItemView::item:hover' in style_sheet
+    assert 'outline: none' in style_sheet
+
+
+def test_the_selected_item_color_comes_from_the_palette():
+    """A hard-coded colour would be wrong in one of light or dark mode.
+
+    Assert on the rule body, not on the whole sheet: the highlight colour is
+    already in it via QSplitter::handle:hover, so a sheet-wide search would
+    pass without any item rule existing.
+    """
+    import re
+
+    from fanta import qtutils
+    from fanta import themes
+
+    palette = _make_palette(dark=False)
+    highlight = qtutils.rgb_css(palette.color(QtGui.QPalette.Highlight))
+    style_sheet = themes.style_sheet_default(palette, bold_fonts=False)
+
+    match = re.search(r'QAbstractItemView::item:selected\s*\{([^}]*)\}', style_sheet)
+
+    assert match, 'no QAbstractItemView::item:selected rule'
+    assert highlight in match.group(1)
+
+
+def test_rgba_css_carries_the_alpha_channel():
+    from fanta import qtutils
+
+    color = QtGui.QColor(1, 2, 3)
+    color.setAlpha(64)
+
+    assert qtutils.rgba_css(color) == 'rgba(1, 2, 3, 64)'
+
+
 def test_diff_syntax_highlighter_uses_light_palette_defaults(qapp):
     context = _make_context()
     doc = QtGui.QTextDocument()

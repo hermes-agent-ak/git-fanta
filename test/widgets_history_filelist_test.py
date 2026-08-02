@@ -173,6 +173,28 @@ def test_new_widget_starts_without_commits(qapp, app_context, managed_qobject):
     assert widget.commits == []
 
 
+def test_the_file_list_is_covered_by_the_item_view_rules(qapp):
+    """The reported hover problem was not specific to the history table.
+
+    QAbstractItemView::item covers every tree and list, so the file list needs
+    no rules of its own -- but nothing said so, and a later per-widget
+    stylesheet would silently take it back out.
+    """
+    from fanta import themes
+
+    style_sheet = themes.style_sheet_default(qapp.palette(), bold_fonts=False)
+
+    assert issubclass(FileWidget, QtWidgets.QAbstractItemView)
+    assert 'QAbstractItemView::item:hover' in style_sheet
+
+
+def test_the_file_list_has_no_stylesheet_of_its_own(qapp, managed_qobject):
+    """A per-widget stylesheet would override the application-wide rules."""
+    widget = managed_qobject(FileWidget(None, None))
+
+    assert widget.styleSheet() == ''
+
+
 def _double_click_first_item(widget):
     """Loest den Doppelklick so aus, wie Qt es beim Anwender tun wuerde."""
     item = widget.topLevelItem(0)

@@ -1618,6 +1618,24 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
             self._animation.setEndValue(0.0)
             self._animation.start()
 
+    def background_brush(self, option):
+        """Return the row background for this state, or None to paint nothing.
+
+        Only the Summary column uses this delegate; Author, Hash and Date are
+        painted by the default one. Anything this method does not paint shows
+        up as those three columns highlighting while Summary stays blank.
+        """
+        state = option.state
+        if state & QtWidgets.QStyle.State_Selected:
+            return option.palette.highlight()
+        if state & QtWidgets.QStyle.State_MouseOver:
+            # The same tint the QAbstractItemView::item:hover rule in
+            # fanta.themes.py applies to the other three columns.
+            hover = QtGui.QColor(option.palette.highlight().color())
+            hover.setAlpha(defs.hover_alpha)
+            return QtGui.QBrush(hover)
+        return None
+
     def paint(self, painter, option, index):
         style = inline_graph_style(option.palette)
         row = index.data(GRAPH_ROW_ROLE)
@@ -1635,8 +1653,9 @@ class GraphDelegate(QtWidgets.QStyledItemDelegate):
         lane_w = self.LANE_WIDTH
 
         selected = bool(option.state & QtWidgets.QStyle.State_Selected)
-        if selected:
-            painter.fillRect(rect, option.palette.highlight())
+        background = self.background_brush(option)
+        if background is not None:
+            painter.fillRect(rect, background)
 
         # Draw the graph if we have graph data.
         if row is not None or prev_row is not None:
@@ -2436,7 +2455,10 @@ class CommitHistoryWidget(QtWidgets.QWidget):
 
         self.revtext = GitDagLineEdit(context)
         self.revtext.setText(ref)
-        self.maxresults = standard.SpinBox(digits=None, maxi=9999999, wrap=True)
+        # 7 digits matches the maximum below. Passing digits=None skips the
+        # minimum-width calculation in standard.SpinBox, which leaves the
+        # number touching the spin buttons on Windows.
+        self.maxresults = standard.SpinBox(digits=7, maxi=9999999, wrap=True)
         self.maxresults.setValue(count)
         self.history_error_status = QtWidgets.QLabel()
         self.history_error_status.setObjectName('HistoryErrorStatus')
@@ -2931,9 +2953,14 @@ class CommitHistoryWidget(QtWidgets.QWidget):
         super().showEvent(event)
         if not self._widgets_initialized:
             self._widgets_initialized = True
-            # Use sizeHint() rather than height() so the controls row is sized
-            # from its natural geometry, not whatever the splitter assigned.
-            self.maxresults.setMinimumHeight(self.revtext.sizeHint().height())
+            # Size the controls row from the font rather than from whatever
+            # QLineEdit.sizeHint() reports -- that hint is several pixels
+            # shorter on Windows than on Linux, which is what made the row
+            # look cramped around "--all".
+            row_height = self.revtext.fontMetrics().height() + 2 * defs.margin
+            row_height = max(row_height, self.revtext.sizeHint().height())
+            self.revtext.setMinimumHeight(row_height)
+            self.maxresults.setMinimumHeight(row_height)
         self.refresh_files()
 
 

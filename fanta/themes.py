@@ -582,10 +582,17 @@ class Theme:
 
 def style_sheet_default(palette: QPalette, bold_fonts: bool) -> str:
     highlight = palette.color(QtGui.QPalette.Highlight)
+    highlighted_text = palette.color(QtGui.QPalette.HighlightedText)
     shadow = palette.color(QtGui.QPalette.Shadow)
     base = palette.color(QtGui.QPalette.Base)
 
     highlight_rgb = qtutils.rgb_css(highlight)
+    highlighted_text_rgb = qtutils.rgb_css(highlighted_text)
+    # A hover that is a lighter highlight reads as "you are about to select
+    # this" without competing with an actual selection.
+    hover = QtGui.QColor(highlight)
+    hover.setAlpha(defs.hover_alpha)
+    hover_rgb = qtutils.rgba_css(hover)
     shadow_rgb = qtutils.rgb_css(shadow)
     base_rgb = qtutils.rgb_css(base)
     if bold_fonts:
@@ -642,6 +649,27 @@ def style_sheet_default(palette: QPalette, bold_fonts: bool) -> str:
         """
         + checkbox_style
         + """
+        /* Item views are painted by the platform style unless we say
+           otherwise, and the platforms disagree. windowsvista insets the
+           selection inside the item rect, which leaves the row background
+           showing above and below it, draws the focus rectangle as a dotted
+           outline, and paints a hover gradient. Fusion and Breeze do none of
+           that. These three rules make every platform paint the way Linux
+           already did. The Flat themes carry the same rules. */
+        QAbstractItemView {{
+            outline: none;
+            show-decoration-selected: 1;
+        }}
+        QAbstractItemView::item:selected {{
+            background-color: {highlight_rgb};
+            color: {highlighted_text_rgb};
+        }}
+        QAbstractItemView::item:hover:!selected {{
+            background-color: {hover_rgb};
+        }}
+
+        """
+        + """
         QSplitter::handle:hover {{
             background: {highlight_rgb};
         }}
@@ -661,6 +689,8 @@ def style_sheet_default(palette: QPalette, bold_fonts: bool) -> str:
         font_weight=font_weight,
         separator=defs.separator,
         highlight_rgb=highlight_rgb,
+        highlighted_text_rgb=highlighted_text_rgb,
+        hover_rgb=hover_rgb,
         shadow_rgb=shadow_rgb,
         base_rgb=base_rgb,
         checkbox_border=defs.border,

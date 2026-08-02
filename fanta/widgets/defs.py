@@ -37,6 +37,9 @@ huge_icon = scale(192)
 max_size = scale(4096)
 
 border = max(1, scale(0.5))
+# How strongly a hovered row tints, 0-255. Shared by the stylesheet rule in
+# fanta/themes.py and by GraphDelegate, which paints its own column.
+hover_alpha = 64
 checkbox = scale(12)
 radio = scale(22)
 

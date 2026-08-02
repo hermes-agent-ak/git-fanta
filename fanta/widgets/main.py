@@ -925,17 +925,27 @@ class MainView(standard.MainWindow):
         self.help_menu.addAction(self.help_about_action)
 
         # Arrange dock widgets
+        #
+        # ┌──────────────────────────┬──────────┐
+        # │        History           │ Branches │
+        # ├─────────┬────────┬───────┴──────────┤
+        # │ Status  │  Diff  │ Commit message   │
+        # └─────────┴────────┴──────────────────┘
+        #
+        # This is the default for a fresh install only. A user with a saved
+        # windowstate keeps it: MainWindow.apply_state() restores that instead
+        # (cola/widgets/standard.py). Changing the arrangement therefore needs
+        # no widget_version bump -- and bumping it would discard every saved
+        # layout and break three tests that assert widget_version == 2.
         bottom = Qt.BottomDockWidgetArea
         top = Qt.TopDockWidgetArea
 
-        self.addDockWidget(top, self.statusdock)
+        # Top row: History fills the left, Branches sits to its right.
         self.addDockWidget(top, self.historydock)
-        self.addDockWidget(top, self.commitdock)
-        if self.browser_dockable:
-            self.addDockWidget(top, self.browserdock)
-            self.tabifyDockWidget(self.browserdock, self.commitdock)
-
         self.addDockWidget(top, self.branchdock)
+        self.splitDockWidget(self.historydock, self.branchdock, Qt.Horizontal)
+
+        # The Branches dock keeps its companions as tabs.
         self.addDockWidget(top, self.submodulesdock)
         self.addDockWidget(top, self.bookmarksdock)
         self.addDockWidget(top, self.recentdock)
@@ -945,7 +955,17 @@ class MainView(standard.MainWindow):
         self.tabifyDockWidget(self.bookmarksdock, self.recentdock)
         self.branchdock.raise_()
 
+        # Bottom row: the current changes, left to right.
+        self.addDockWidget(bottom, self.statusdock)
         self.addDockWidget(bottom, self.diffdock)
+        self.addDockWidget(bottom, self.commitdock)
+        self.splitDockWidget(self.statusdock, self.diffdock, Qt.Horizontal)
+        self.splitDockWidget(self.diffdock, self.commitdock, Qt.Horizontal)
+        if self.browser_dockable:
+            self.addDockWidget(bottom, self.browserdock)
+            self.tabifyDockWidget(self.browserdock, self.commitdock)
+            self.commitdock.raise_()
+
         self.addDockWidget(bottom, self.actionsdock)
         self.addDockWidget(bottom, self.logdock)
         self.tabifyDockWidget(self.actionsdock, self.logdock)
@@ -1034,8 +1054,34 @@ class MainView(standard.MainWindow):
         # Default size; this is thrown out when save/restore is used
         width, height = qtutils.desktop_size()
         self.resize((width * 3) // 4, height)
+        # Column widths. resizeDocks() takes relative weights, not pixels.
+        self.resizeDocks([self.historydock, self.branchdock], [3, 1], Qt.Horizontal)
+        self.resizeDocks(
+            [self.statusdock, self.diffdock, self.commitdock], [1, 2, 1], Qt.Horizontal
+        )
+        # Row heights. resizeDocks(..., Qt.Vertical) cannot do this: it only
+        # resizes docks that share a dock area, and these are in the top and
+        # bottom areas. Measured -- it leaves both rows at exactly half the
+        # window. Capping the bottom row instead makes Qt give the rest to
+        # History; the cap is lifted again on the next event-loop turn so the
+        # user can still drag the splitter anywhere.
+        bottom_row = (self.statusdock, self.diffdock, self.commitdock)
+        for dock in bottom_row:
+            dock.widget().setMaximumHeight(self._initial_bottom_row_height())
+        QtCore.QTimer.singleShot(0, lambda: self._release_bottom_row_height(bottom_row))
         self.statuswidget.set_initial_size()
         self.commiteditor.set_initial_size()
+
+    def _initial_bottom_row_height(self):
+        """Return the height the bottom row starts at, in pixels"""
+        return max(200, self.height() // 3)
+
+    def _release_bottom_row_height(self, docks):
+        """Lift the temporary cap so the splitter is draggable again"""
+        for dock in docks:
+            widget = dock.widget()
+            if widget is not None:
+                widget.setMaximumHeight(defs.max_size)
 
     def set_filter(self, txt):
         self.statuswidget.set_filter(txt)

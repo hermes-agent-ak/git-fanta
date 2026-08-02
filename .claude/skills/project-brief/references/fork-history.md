@@ -456,6 +456,32 @@ tag-driven release workflow.
 - **`fanta/__main__.py` needs a body.** The package rename left it with only a docstring, so
   `python -m fanta` printed nothing and exited 0 while the README documented it.
 
+## 15. Default layout and consistent item-view painting
+
+Plan: `docs/plans/2026-08-02-windows-view-fixes.md`.
+
+The default layout now gives the History and Branches docks the top row, and
+Status, Diff, and Commit message the bottom row. The Default theme explicitly
+paints selected and hovered `QAbstractItemView` rows from the palette so every
+platform, including Windows, shares the same row geometry and focus treatment.
+
+**Decisions that later work must not undo:**
+
+- **Do not bump `MainView.widget_version`.** The default state is captured from
+  the arranged docks for new users; `apply_state()` restores a saved
+  `windowstate` for existing users. A version bump would discard their layout.
+- **Mouse tracking on `CommitTreeWidget` is load-bearing.** It enables graph
+  label hit-testing. `GraphDelegate.background_brush()` now handles the hover
+  state for the Summary column instead of disabling tracking and breaking chip
+  tooltips.
+- **The item-view rules belong in `style_sheet_default()`, not per-widget
+  stylesheets.** The application-wide selector covers history and file trees,
+  keeps Windows aligned with Linux, and uses palette colours rather than a
+  Windows branch or hard-coded values.
+- **The filter controls derive their size from the font.** The count uses the
+  seven digits implied by its maximum, and both controls get a font-and-margin
+  minimum height instead of a platform-dependent `QLineEdit.sizeHint()`.
+
 ## Where the fork's tests live
 
 - `test/widgets_dag_history_test.py` — `CommitHistoryWidget`, `GitDAG`, state round-trips,
